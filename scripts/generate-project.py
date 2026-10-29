@@ -30,7 +30,7 @@ def format_scheme(source):
     element.insert(1, ET.Element('TestAction', {
         'buildConfiguration': 'Debug',
         'selectedDebuggerIdentifier': 'Xcode.DebuggerFoundation.Debugger.LLDB',
-        'selectedLauncherIdentifier': 'Xcode.IDEFoundation.Launcher.LLDB',
+        'selectedLauncherIdentifier': 'Xcode.DebuggerFoundation.Launcher.LLDB',
         'shouldUseLaunchSchemeArgsEnv': 'YES', 'shouldAutocreateTestPlan': 'YES',
     }))
     launch = element.find('LaunchAction')
@@ -105,7 +105,7 @@ for platform, target, bundle, sdk, deployment in [
     (schemes / f'{target}.xcscheme').write_text(format_scheme(f'''<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="1640" version="1.3">
  <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">{ref}</BuildActionEntry></BuildActionEntries></BuildAction>
- <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="YES"><BuildableProductRunnable runnableDebuggingMode="0">{ref}</BuildableProductRunnable></LaunchAction>
+ <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="YES"><BuildableProductRunnable runnableDebuggingMode="0">{ref}</BuildableProductRunnable></LaunchAction>
  <ProfileAction buildConfiguration="Release"><BuildableProductRunnable runnableDebuggingMode="0">{ref}</BuildableProductRunnable></ProfileAction>
  <AnalyzeAction buildConfiguration="Debug"/><ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
 </Scheme>
