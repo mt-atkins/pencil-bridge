@@ -209,7 +209,8 @@ final class DemoCanvasView: NSView {
         case "e": model.eraser = true
         case "[": model.brushSize = max(1, model.brushSize - 2)
         case "]": model.brushSize = min(60, model.brushSize + 2)
-        default: super.keyDown(with: event)
+        // Unsupported tablet shortcuts should stay silent; feedback plays on the iPad.
+        default: break
         }
     }
     func savePNG() {

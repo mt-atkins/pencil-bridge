@@ -19,6 +19,39 @@ func sample(_ phase: InputPhase, _ x: Double = 0.2, _ y: Double = 0.3, _ mode: I
 }
 
 func unitChecks() throws {
+    let window = WindowTarget(id: 12, pid: 123, app: "Drawing app", title: "Canvas", bundleID: "test.draw",
+                              x: -1000, y: 40, width: 800, height: 600)
+    check(window.valid && window.rect.minX == -1000, "window mapping accepts secondary displays with negative coordinates")
+    check(window.permits(frontPID: 123, frontWindow: 12), "app lock allows its selected foreground window")
+    check(!window.permits(frontPID: 456, frontWindow: 12), "app lock blocks a different foreground process")
+    check(!window.permits(frontPID: 123, frontWindow: 13), "app lock blocks another window of the same app")
+    check(!window.permits(frontPID: nil, frontWindow: nil), "app lock blocks an unavailable window")
+    check(!WorkspaceState(locked: true).valid, "app lock cannot be enabled without a target")
+    let paused = WorkspaceState(selected: window, locked: true, inputAllowed: false)
+    var longTitle = window
+    longTitle.title = String(repeating: "🎨", count: 100)
+    longTitle.app = String(repeating: "🎨", count: 80)
+    let busyWorkspace = WorkspaceState(windows: Array(repeating: longTitle, count: 12), selected: longTitle, locked: true)
+    check(try PacketFramer.encode(Packet(kind: .welcome, workspace: busyWorkspace.forTransport)).count < PacketFramer.limit,
+          "Unicode window titles are bounded to fit the input connection")
+    var stateFramer = PacketFramer()
+    let statePacket = try stateFramer.append(PacketFramer.encode(Packet(kind: .workspace, workspace: paused)))
+    check(statePacket.first?.workspace == paused, "paused app lock survives transport without silently unlocking")
+    let frame = PreviewFrame(windowID: 12, jpeg: Data(repeating: 42, count: 89_000))
+    let encoded = try PacketFramer.encode(Packet(kind: .preview, preview: frame))
+    check(rejected(encoded), "preview images cannot enter the latency-sensitive input connection")
+    var previewFramer = PacketFramer(allowsPreview: true)
+    var frames: [Packet] = []
+    for start in stride(from: 0, to: encoded.count, by: 7000) {
+        frames += try previewFramer.append(encoded.subdata(in: start..<min(encoded.count, start + 7000)))
+    }
+    check(frames.first?.preview?.jpeg == frame.jpeg, "large ghost image survives fragmented preview transport")
+    check(!PreviewFrame(windowID: 12, jpeg: Data(repeating: 0, count: 90_001)).valid, "oversized preview image rejected")
+    var malicious = PacketFramer(allowsPreview: true)
+    do {
+        _ = try malicious.append(PacketFramer.encode(Packet(kind: .context, app: AppContext(name: String(repeating: "x", count: 9000), bundleID: "test"))))
+        check(false, "preview channel must retain small limits for input metadata")
+    } catch { check(true, "preview channel retains small limits for input metadata") }
     check(Bridge.normalizedCode("abCD-1234 ef56") == "ABCD1234EF56", "pairing code normalization")
     let bytes = try PacketFramer.encode(Packet(kind: .sample, sample: sample(.down)))
     var framer = PacketFramer()

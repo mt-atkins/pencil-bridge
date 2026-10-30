@@ -28,6 +28,7 @@
 	<array>
 		<string>_pencilbridge._tcp</string>
 		<string>_pencilqr._tcp</string>
+		<string>_pencilview._tcp</string>
 	</array>
 	<key>NSHighResolutionCapable</key>
 	<true/>

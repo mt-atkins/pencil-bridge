@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Network
+import ImageIO
 
 final class TabletBridge: ObservableObject {
     @Published var hosts: [NWBrowser.Result] = []
@@ -12,6 +13,14 @@ final class TabletBridge: ObservableObject {
     @Published var latencyMS: Double? = nil
     @Published var display: DisplayInfo?
     @Published var targetApp: AppContext?
+    @Published var workspace = WorkspaceState()
+    @Published var ghostImage: UIImage?
+    private var previewPeer: Peer?
+    private var previewService: String?
+    private var previewGeneration = 0
+    private var decoding = false
+    private let imageDecoder = DispatchQueue(label: "dev.morgan.pencilbridge.preview-decode", qos: .utility)
+    var inputAllowed: Bool { connected && workspace.inputAllowed }
     @Published var pressureFeel = PressureFeel(rawValue: UserDefaults.standard.string(forKey: "pressureFeel") ?? "") ?? .natural {
         didSet { UserDefaults.standard.set(pressureFeel.rawValue, forKey: "pressureFeel") }
     }
@@ -73,9 +82,12 @@ final class TabletBridge: ObservableObject {
                 self.connected = true
                 self.connecting = false
                 self.status = "Connected"
+                if let state = packet.workspace { self.applyWorkspace(state) }
             case .display:
-                if let display = packet.display { self.cancelStroke(); self.display = display }
+                if let display = packet.display, display != self.display { self.cancelStroke(); self.display = display }
             case .context: self.targetApp = packet.app
+            case .workspace:
+                if let state = packet.workspace { self.applyWorkspace(state) }
             case .heartbeat: break
             default: peer?.close("Unexpected message")
             }
@@ -86,6 +98,7 @@ final class TabletBridge: ObservableObject {
             self?.status = reason
             self?.peer = nil
             self?.latencyMS = nil
+            self?.stopPreview()
         }
         peer.onLatency = { [weak self] value in self?.latencyMS = value }
         peer.start()
@@ -95,20 +108,20 @@ final class TabletBridge: ObservableObject {
         }
     }
     func send(_ sample: PencilSample) {
-        guard connected else { return }
+        guard connected, workspace.inputAllowed || sample.phase == .cancel else { return }
         peer?.send(Packet(kind: .sample, sample: sample))
     }
     func send(_ samples: [PencilSample]) {
-        guard connected, !samples.isEmpty else { return }
+        guard inputAllowed, !samples.isEmpty else { return }
         peer?.send(Packet(kind: .sample, samples: Array(samples.suffix(16))))
     }
     func control(_ action: TabletControl.Action) {
-        guard connected else { return }
+        guard inputAllowed else { return }
         cancelStroke()
         peer?.send(Packet(kind: .control, control: TabletControl(action: action)))
     }
     func gesture(_ command: TabletControl) {
-        guard connected else { return }
+        guard inputAllowed else { return }
         peer?.send(Packet(kind: .control, control: command))
     }
     func cancelStroke() {
@@ -117,10 +130,79 @@ final class TabletBridge: ObservableObject {
     }
     func disconnect() {
         cancelStroke()
+        stopPreview()
+        workspace = WorkspaceState()
         peer?.close()
         peer = nil
         connected = false
         connecting = false
+    }
+    func configureWorkspace(_ request: WorkspaceRequest) {
+        guard connected else { return }
+        cancelStroke()
+        peer?.send(Packet(kind: .workspace, workspaceRequest: request))
+    }
+    private func applyWorkspace(_ state: WorkspaceState) {
+        if state.selected != workspace.selected || state.locked != workspace.locked || state.inputAllowed != workspace.inputAllowed {
+            cancelStroke()
+        }
+        if state.selected?.id != workspace.selected?.id || !state.previewEnabled || !state.previewStatus.hasPrefix("Live") {
+            ghostImage = nil; previewGeneration += 1
+        }
+        workspace = state
+        guard state.previewEnabled, let service = state.previewService, let secret = state.previewSecret else {
+            stopPreview(); return
+        }
+        guard previewService != service else { return }
+        stopPreview()
+        previewService = service
+        let connection = NWConnection(to: .service(name: service, type: Bridge.previewService, domain: "local.", interface: nil),
+                                      using: bridgeParameters(code: secret))
+        let peer = Peer(connection, allowsPreview: true)
+        previewPeer = peer
+        peer.onReady = { [weak peer] in peer?.send(Packet(kind: .hello)) }
+        peer.onPacket = { [weak self, weak peer] packet in
+            guard packet.kind == .preview, let frame = packet.preview else { peer?.close("Unexpected preview message"); return }
+            self?.receivePreview(frame)
+        }
+        peer.onClose = { [weak self] _ in
+            self?.previewService = nil; self?.previewPeer = nil; self?.ghostImage = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, self.connected, self.workspace.previewEnabled, self.previewPeer == nil else { return }
+                self.applyWorkspace(self.workspace)
+            }
+        }
+        peer.start()
+    }
+    private func receivePreview(_ frame: PreviewFrame) {
+        guard !decoding, workspace.previewEnabled, workspace.selected?.id == frame.windowID else { return }
+        decoding = true
+        let generation = previewGeneration
+        imageDecoder.async { [weak self] in
+            // Decode off the input/UI thread and reject unreasonable image dimensions before allocation.
+            let source = CGImageSourceCreateWithData(frame.jpeg as CFData, nil)
+            var image: UIImage?
+            if let source, let info = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+               let width = info[kCGImagePropertyPixelWidth] as? Int,
+               let height = info[kCGImagePropertyPixelHeight] as? Int,
+               width > 0, height > 0, width <= 1024, height <= 1024,
+               let cg = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) {
+                image = UIImage(cgImage: cg)
+            }
+            let decoded = image
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.decoding = false
+                if self.connected, self.previewGeneration == generation, self.workspace.selected?.id == frame.windowID {
+                    self.ghostImage = decoded
+                }
+            }
+        }
+    }
+    private func stopPreview() {
+        previewGeneration += 1
+        previewPeer?.onClose = nil
+        previewPeer?.close(); previewPeer = nil; previewService = nil; ghostImage = nil
     }
     func suspend() {
         disconnect()

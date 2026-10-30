@@ -15,6 +15,8 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
     var fingerSpeed = 1.5
     var generation = 0
     var accentCursor = true
+    var ghostImage: UIImage?
+    var ghostOpacity = 0.45
     private struct Dot { let point: CGPoint; let pressure: CGFloat }
     private var active: UITouch?
     private var activeMode = InputMode.draw
@@ -203,12 +205,13 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
         DistyllBrand.ui(DistyllBrand.lineHex).setStroke()
         let outline = UIBezierPath(roundedRect: area, cornerRadius: 16)
         outline.lineWidth = 1 / UIScreen.main.scale; outline.stroke()
+        if let ghostImage { ghostImage.draw(in: area, blendMode: .normal, alpha: ghostOpacity) }
         let grid = UIBezierPath()
         let inset = min(area.width, area.height) * 0.07
         for y in stride(from: area.minY + inset, to: max(area.minY + inset, area.maxY - max(40, inset)), by: 10) {
             grid.move(to: CGPoint(x: area.minX + inset, y: y)); grid.addLine(to: CGPoint(x: area.maxX - inset, y: y))
         }
-        UIColor.white.withAlphaComponent(0.045).setStroke(); grid.lineWidth = 1 / UIScreen.main.scale; grid.stroke()
+        if ghostImage == nil { UIColor.white.withAlphaComponent(0.045).setStroke(); grid.lineWidth = 1 / UIScreen.main.scale; grid.stroke() }
         UIColor.white.withAlphaComponent(0.8).setStroke()
         for pair in zip(trail, trail.dropFirst()) {
             let segment = UIBezierPath(); segment.move(to: pair.0.point); segment.addLine(to: pair.1.point)
@@ -225,6 +228,7 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
 }
 
 struct Canvas: UIViewRepresentable {
+    @AppStorage("ghostOpacity") private var ghostOpacity = 0.45
     @ObservedObject var bridge: TabletBridge
     func makeUIView(context: Context) -> PencilSurface {
         let view = PencilSurface()
@@ -235,10 +239,11 @@ struct Canvas: UIViewRepresentable {
     }
     func updateUIView(_ view: PencilSurface, context: Context) {
         let aspect = bridge.display?.aspect ?? 16 / 9
-        if view.mode != bridge.mode || !bridge.connected || view.generation != bridge.resetGeneration ||
+        if view.mode != bridge.mode || !bridge.inputAllowed || view.generation != bridge.resetGeneration ||
            view.displayAspect != aspect || view.preserveProportions != bridge.preserveProportions { view.cancel() }
         view.generation = bridge.resetGeneration; view.mode = bridge.mode
-        view.enabled = bridge.connected; view.pressureFeel = bridge.pressureFeel
+        view.enabled = bridge.inputAllowed; view.pressureFeel = bridge.pressureFeel
+        view.ghostImage = bridge.ghostImage; view.ghostOpacity = ghostOpacity
         view.displayAspect = aspect; view.preserveProportions = bridge.preserveProportions
         view.gesturesEnabled = bridge.fingerInput != .off
         view.trackpadEnabled = bridge.fingerInput == .trackpad

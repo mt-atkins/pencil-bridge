@@ -2,7 +2,7 @@
 
 Use an Apple Pencil-compatible iPad as a cursor input surface for a Mac. Two native Swift apps send Pencil input over an encrypted local connection.
 
-**Experimental prototype (0.3).** The earlier version was installed and paired on physical hardware. The apps include a tablet workspace, finger trackpad controls, four-digit codes and QR pairing. Version 0.3 applies Distyll’s Toolpath branding across both apps. Automated checks cover the new input and pairing formats; camera scanning, pressure support in individual drawing apps, and gesture feel still need hardware testing. Contributions and device reports are welcome. Update both apps together: versions 0.2 and 0.3 use input protocol 2.
+**Experimental prototype (0.4).** The earlier version was installed and paired on physical hardware. The apps include a tablet workspace, finger trackpad controls, four-digit codes and QR pairing. Version 0.4 adds a selected-window ghost preview and app input lock alongside Distyll’s Toolpath branding. Automated checks cover the new input and pairing formats; camera scanning, pressure support in individual drawing apps, and gesture feel still need hardware testing. Contributions and device reports are welcome. Update both apps together: version 0.4 uses input protocol 3 and requires both apps to be updated.
 
 The Pencil touches the **iPad screen**. Mac trackpads and Magic Trackpads cannot detect its tip. USB currently installs the app; it does **not** carry the input connection.
 
@@ -21,7 +21,17 @@ Graphite surfaces, restrained orange actions, Space Grotesk headings, Inter text
 - Per-app keyboard bindings: activate the desired Mac app, then use **Edit Shortcuts** in the companion to customize its keys and modifiers. Profiles are saved locally and selected automatically as the active Mac app changes.
 - Up to 16 delivered pen samples are batched together for stroke fidelity. Movement waiting behind a slow connection is bounded, while press, release and cancellation ordering is retained.
 
-Drawing apps differ in how they accept synthetic tablet events. **Send tablet pressure and tilt** can be disabled in the Mac app for ordinary mouse compatibility. Encoding and AppKit conversion are tested; pressure/tilt support has not yet been verified across third-party drawing apps. First-generation Apple Pencil has no hover sensing or double-tap button. Screen mirroring and direct USB input are not implemented.
+Drawing apps differ in how they accept synthetic tablet events. **Send tablet pressure and tilt** can be disabled in the Mac app for ordinary mouse compatibility. Encoding and AppKit conversion are tested; pressure/tilt support has not yet been verified across third-party drawing apps. First-generation Apple Pencil has no hover sensing or double-tap button. A low-frame-rate window ghost is available; full desktop mirroring and direct USB input are not implemented.
+
+## Window ghost and app lock
+
+Choose **App window** in the Mac companion, or **Selected window** in iPad Tablet Settings. The Pencil maps to that window’s rectangle instead of the entire display. Choose Whole display to return to display mapping. The picker shows up to twelve visible windows, plus the current selection.
+
+Enable **Show window ghost** for a faint, live image behind the iPad drawing surface. Allow Pencil Bridge in macOS **Privacy & Security → Screen Recording** (called Screen & System Audio Recording on newer macOS releases); macOS may require restarting the app. Ghost opacity is adjustable on the iPad. Capture includes only the selected window, without the cursor, at up to four frames per second and 960 pixels on the longest side. Minimized/closed windows have no live preview. This is a positioning aid; the local Pencil trail remains immediate.
+
+Frames use a separate encrypted connection with a fresh 256-bit session secret supplied over the authenticated input connection. Frames are bounded, dropped when the preview connection is busy, and decoded off the iPad input thread. Images are not recorded or saved. Screen Recording permission is only requested when ghost preview is enabled.
+
+**Lock input to selected app** pauses Pencil, finger and shortcut input when the selected app/window is not active. Locked events are addressed to the selected process; finger motion is confined to the selected window and clicks are blocked through overlapping windows. Changing targets, losing focus or moving the window releases held input. A closed/minimized locked target stays locked and paused until it returns or you unlock it. Switch to the chosen window on the Mac to resume. App lock does not activate apps automatically or prevent use of your physical keyboard/mouse.
 
 ## Mac drawing demo
 
@@ -29,7 +39,7 @@ Choose **Open drawing demo** in the Mac companion or menu bar. Pair the iPad, se
 
 ## Audio feedback
 
-The iPad plays optional, short speaker clicks for Pencil contact, finger clicks, drag starts and tool controls. Tablet Settings provides a Click sounds toggle, volume slider and Test sound button. Cues are generated locally and prepared off the input thread; there is no continuous stroke sound or extra network traffic. They respect Silent mode and device volume and mix with other audio. Use the iPad speakers for the most direct feel; Bluetooth audio may add delay. These are audible cues, not physical haptics.
+The iPad plays optional, short speaker clicks for Pencil contact, finger clicks, drag starts and tool controls. Tablet Settings provides a Click sounds toggle, volume slider and Test sound button. Cues are generated locally and prepared off the input thread; there is no continuous stroke sound or extra network traffic. They use the iPad’s media volume and mix with other audio. **Play when iPad is muted** is enabled by default; turn it off to respect Silent mode. The output label and route picker show whether the iPad is using its own speakers, headphones or AirPlay. No feedback audio is generated on the Mac. Use the iPad speakers for the most direct feel; Bluetooth audio may add delay. These are audible cues, not physical haptics.
 
 ## Finger trackpad controls
 
@@ -143,7 +153,7 @@ The automated checks cover packet fragmentation and batching, invalid coordinate
 
 Use `--unit-only` to skip loopback networking. A restricted sandbox may require permission to listen on localhost.
 
-Hardware verification is separate: test manual and QR pairing (including Camera denied/cancelled), Pencil pressure and tilt in your drawing app, relative finger pointing, secondary/double click, two-finger scrolling, pinch zoom, three-finger drag, and release after lifting, cancellation, backgrounding or stopping sharing. Test switching Mac displays and apps, screen rotation, left-handed controls and finger input disabled. Include device models, OS versions, perceived delay, and connection round-trip readings in reports.
+Hardware verification is separate: test window selection, ghost alignment after moving/resizing a window, capture permission denied/re-enabled, app lock while changing apps/windows or minimizing/closing the target, audio routes/mute, and then test manual and QR pairing (including Camera denied/cancelled), Pencil pressure and tilt in your drawing app, relative finger pointing, secondary/double click, two-finger scrolling, pinch zoom, three-finger drag, and release after lifting, cancellation, backgrounding or stopping sharing. Test switching Mac displays and apps, screen rotation, left-handed controls and finger input disabled. Include device models, OS versions, perceived delay, and connection round-trip readings in reports.
 
 ## Source layout
 

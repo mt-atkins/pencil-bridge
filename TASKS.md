@@ -22,3 +22,5 @@
 - [x] Distyll Toolpath branding, bundled licensed fonts and original platform icons.
 - [x] Optional local audio feedback with volume, mute support and pen-test preview.
 - [x] Mac drawing demo with pressure/tilt readouts, brush/eraser, undo/redo and PNG export.
+- [x] Selected-window mapping, separate encrypted ghost preview and input lock on both platforms.
+- [ ] Verify ghost alignment, Screen Recording permissions and app-lock behavior with physical iPad input.

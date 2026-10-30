@@ -2,7 +2,8 @@ import Foundation
 
 enum Bridge {
     static let service = "_pencilbridge._tcp"
-    static let version = 2
+    static let version = 3
+    static let previewService = "_pencilview._tcp"
     static let qrService = "_pencilqr._tcp"
     static func newJoinCode() -> String { String(format: "%04d", Int.random(in: 0..<10000)) }
     static func validJoinCode(_ text: String) -> Bool {
@@ -33,7 +34,7 @@ struct PencilSample: Codable {
 }
 
 struct Packet: Codable {
-    enum Kind: String, Codable { case hello, welcome, sample, heartbeat, goodbye, control, display, context }
+    enum Kind: String, Codable { case hello, welcome, sample, heartbeat, goodbye, control, display, context, workspace, preview }
     var kind: Kind
     var version: Int = Bridge.version
     var sample: PencilSample? = nil
@@ -43,6 +44,9 @@ struct Packet: Codable {
     var control: TabletControl? = nil
     var samples: [PencilSample]? = nil
     var app: AppContext? = nil
+    var workspace: WorkspaceState? = nil
+    var workspaceRequest: WorkspaceRequest? = nil
+    var preview: PreviewFrame? = nil
     var inputSamples: [PencilSample] { samples ?? sample.map { [$0] } ?? [] }
     var onlyMovement: Bool { kind == .sample && !inputSamples.isEmpty && inputSamples.allSatisfy { $0.phase == .move } }
 }
@@ -85,6 +89,8 @@ struct OutboundBuffer {
 
 // TCP is a byte stream: a read can contain part of a packet or several packets.
 struct PacketFramer {
+    var allowsPreview = false
+    init(allowsPreview: Bool = false) { self.allowsPreview = allowsPreview }
     private var buffer = Data()
     static let limit = 8192
     enum Failure: Error { case oversized, invalid }
@@ -97,13 +103,16 @@ struct PacketFramer {
         buffer.append(data)
         var packets: [Packet] = []
         while let end = buffer.firstIndex(of: 10) {
-            guard buffer.distance(from: buffer.startIndex, to: end) <= Self.limit else {
+            let length = buffer.distance(from: buffer.startIndex, to: end)
+            guard length <= (allowsPreview ? 125_000 : Self.limit) else {
                 throw Failure.oversized
             }
             let line = Data(buffer[..<end])
             buffer.removeSubrange(...end)
             guard let packet = try? JSONDecoder().decode(Packet.self, from: line),
                   packet.version == Bridge.version,
+                  (packet.kind == .preview ? (allowsPreview && packet.preview?.valid == true) : length <= Self.limit),
+                  packet.workspace == nil || packet.workspace?.valid == true,
                   packet.kind != .sample || (!packet.inputSamples.isEmpty && packet.inputSamples.count <= 16 && packet.inputSamples.allSatisfy(\.valid)),
                   packet.kind != .control || packet.control?.valid == true,
                   packet.display == nil || packet.display?.valid == true,
@@ -112,7 +121,7 @@ struct PacketFramer {
             }
             packets.append(packet)
         }
-        guard buffer.count <= Self.limit else { throw Failure.oversized }
+        guard buffer.count <= (allowsPreview ? 125_000 : Self.limit) else { throw Failure.oversized }
         return packets
     }
 }

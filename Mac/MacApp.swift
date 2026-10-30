@@ -5,6 +5,7 @@ import ApplicationServices
 import CoreImage.CIFilterBuiltins
 
 final class MacBridge: ObservableObject {
+    let workspace = WindowWorkspace()
     @Published var running = false
     @Published var connected = false
     @Published var status = "Start sharing to connect your iPad."
@@ -22,6 +23,8 @@ final class MacBridge: ObservableObject {
     @Published var displayID = CGMainDisplayID()
     @Published var sampleCount = 0
     @Published var latencyMS: Double? = nil
+    private var demoPreviewConfigured = false
+    private var lastWorkspaceDisplay: DisplayInfo?
     private var receivedSamples = 0
     private var listener: NWListener?
     private var qrListener: NWListener?
@@ -44,6 +47,21 @@ final class MacBridge: ObservableObject {
     private var clickCount: Int64 = 0
 
     init() {
+        workspace.onWillChange = { [weak self] in self?.releaseButton() }
+        workspace.onChange = { [weak self] state in
+            guard let self, self.connected else { return }
+            self.peer?.send(Packet(kind: .workspace, workspace: state.forTransport))
+            if self.lastWorkspaceDisplay != self.displayInfo {
+                self.lastWorkspaceDisplay = self.displayInfo
+                self.peer?.send(Packet(kind: .display, display: self.displayInfo))
+            }
+            if let target = state.selected, state.locked {
+                self.targetApp = AppContext(name: target.app, bundleID: target.bundleID)
+                self.peer?.send(Packet(kind: .context, app: self.targetApp))
+            } else if let front = NSWorkspace.shared.frontmostApplication {
+                self.updateTargetApp(front)
+            }
+        }
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.trusted = AXIsProcessTrusted()
@@ -139,18 +157,22 @@ final class MacBridge: ObservableObject {
                 self.sampleCount = 0
                 self.receivedSamples = 0
                 self.status = "iPad connected"
-                peer.send(Packet(kind: .welcome, display: self.displayInfo, app: self.targetApp))
+                peer.send(Packet(kind: .welcome, display: self.displayInfo, app: self.targetApp, workspace: self.workspace.state.forTransport))
+                self.workspace.startSession()
                 return
             }
             switch packet.kind {
             case .sample:
-                guard self.trusted else { self.releaseButton(); return }
+                guard self.trusted, self.inputAllowed else { self.releaseButton(); return }
                 for sample in packet.inputSamples {
                     self.receivedSamples += 1
                     self.consume(sample)
                 }
             case .control:
-                if self.trusted, let control = packet.control { self.perform(control) }
+                if self.trusted, self.inputAllowed, let control = packet.control { self.perform(control) }
+                else { self.releaseButton() }
+            case .workspace:
+                if let request = packet.workspaceRequest { self.workspace.request(request) }
             case .heartbeat: break
             case .goodbye: peer.close()
             default: peer.close("Unexpected message")
@@ -159,6 +181,7 @@ final class MacBridge: ObservableObject {
         peer.onClose = { [weak self] reason in
             guard let self else { return }
             self.releaseButton()
+            self.workspace.stopSession()
             self.peer = nil
             self.authenticated = false
             self.connected = false
@@ -174,6 +197,7 @@ final class MacBridge: ObservableObject {
     }
     func stop() {
         running = false
+        workspace.stopSession()
         listener?.stateUpdateHandler = nil
         listener?.newConnectionHandler = nil
         listener?.cancel()
@@ -196,7 +220,21 @@ final class MacBridge: ObservableObject {
         displayID = id
         if connected { peer?.send(Packet(kind: .display, display: displayInfo)) }
     }
+    private var inputAllowed: Bool {
+        guard workspace.state.locked else { return true }
+        return workspace.state.inputAllowed && NSWorkspace.shared.frontmostApplication?.processIdentifier == workspace.state.selected?.pid
+    }
+    private var inputBounds: CGRect { workspace.state.selected?.rect ?? CGDisplayBounds(displayID) }
+    private func emit(_ event: CGEvent?) {
+        guard let event else { return }
+        if workspace.state.locked, let target = workspace.state.selected {
+            event.postToPid(target.pid)
+        } else { event.post(tap: .cghidEventTap) }
+    }
     private var displayInfo: DisplayInfo {
+        if let target = workspace.state.selected {
+            return DisplayInfo(name: target.app + " // " + String(target.title.prefix(80)), width: target.width, height: target.height)
+        }
         let bounds = CGDisplayBounds(displayID)
         let name = displays.first(where: { $0.0 == displayID })?.1 ?? "Mac display"
         return DisplayInfo(name: name, width: bounds.width, height: bounds.height)
@@ -212,7 +250,7 @@ final class MacBridge: ObservableObject {
     private func endTools() {
         if panning { key(49, down: false); panning = false }
         if penInProximity {
-            PenEvents.proximity(enter: false, point: lastPoint, source: source)?.post(tap: .cghidEventTap)
+            emit(PenEvents.proximity(enter: false, point: lastPoint, source: source))
             penInProximity = false
         }
     }
@@ -220,11 +258,16 @@ final class MacBridge: ObservableObject {
         if sample.phase == .cancel { releaseButton(); return }
         if sample.phase == .down {
             releaseButton()
+            if workspace.state.locked {
+                let bounds = inputBounds
+                let point = CGPoint(x: bounds.minX + sample.x * max(0, bounds.width - 1), y: bounds.minY + sample.y * max(0, bounds.height - 1))
+                guard workspace.allowsInput(at: point) else { return }
+            }
             if sample.mode == .pan { key(49, down: true); panning = true }
             if sample.mode == .draw, tabletEvents {
-                let bounds = CGDisplayBounds(displayID)
+                let bounds = inputBounds
                 let point = CGPoint(x: bounds.minX + sample.x * bounds.width, y: bounds.minY + sample.y * bounds.height)
-                PenEvents.proximity(enter: true, point: point, source: source)?.post(tap: .cghidEventTap)
+                emit(PenEvents.proximity(enter: true, point: point, source: source))
                 penInProximity = true
             }
         }
@@ -235,14 +278,16 @@ final class MacBridge: ObservableObject {
     private func key(_ code: CGKeyCode, down: Bool, flags: CGEventFlags = []) {
         let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
         event?.flags = flags
-        event?.post(tap: .cghidEventTap)
+        emit(event)
     }
     private func perform(_ control: TabletControl) {
         guard control.valid else { return }
         switch control.action {
         case .trackpadBegin, .dragBegin:
             releaseButton()
-            postFinger(finger.begin(at: CGEvent(source: nil)?.location ?? lastPoint, dragging: control.action == .dragBegin))
+            let point = CGEvent(source: nil)?.location ?? lastPoint
+            if workspace.state.locked, !workspace.allowsInput(at: point) { return }
+            postFinger(finger.begin(at: point, dragging: control.action == .dragBegin))
             return
         case .relativeMove:
             guard let old = finger.point else { return }
@@ -253,12 +298,17 @@ final class MacBridge: ObservableObject {
                     CGPoint(x: min(CGRect.maxX - 1, max(CGRect.minX, next.x)), y: min(CGRect.maxY - 1, max(CGRect.minY, next.y)))
                 }.min(by: { hypot($0.x - next.x, $0.y - next.y) < hypot($1.x - next.x, $1.y - next.y) }) ?? old
             }
+            if workspace.state.locked, let bounds = workspace.state.selected?.rect {
+                next.x = min(bounds.maxX - 1, max(bounds.minX, next.x))
+                next.y = min(bounds.maxY - 1, max(bounds.minY, next.y))
+            }
             postFinger(finger.move(to: next))
             return
         case .trackpadEnd, .dragEnd: endTrackpad(); return
         case .click, .secondaryClick:
             releaseButton()
             let point = CGEvent(source: nil)?.location ?? lastPoint
+            if workspace.state.locked, !workspace.allowsInput(at: point) { return }
             let secondary = control.action == .secondaryClick
             let now = ProcessInfo.processInfo.systemUptime
             if now - lastClickTime < NSEvent.doubleClickInterval, secondary == lastClickWasSecondary,
@@ -273,12 +323,14 @@ final class MacBridge: ObservableObject {
         }
         if control.action == .scroll {
             guard !pointer.held, !finger.held else { return }
-            CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
-                    wheel1: Int32(control.dy.rounded()), wheel2: Int32(control.dx.rounded()), wheel3: 0)?.post(tap: .cghidEventTap)
+            if workspace.state.locked, !workspace.allowsInput(at: CGEvent(source: nil)?.location ?? lastPoint) { return }
+            emit(CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
+                    wheel1: Int32(control.dy.rounded()), wheel2: Int32(control.dx.rounded()), wheel3: 0))
             return
         }
         releaseButton()
         if control.action == .nextDisplay {
+            guard workspace.state.selected == nil else { return }
             let ids = displays.map(\.0)
             if let current = ids.firstIndex(of: displayID), !ids.isEmpty { changeDisplay(ids[(current + 1) % ids.count]) }
         } else if let binding = shortcut(for: control.action, app: targetApp.bundleID), binding.valid {
@@ -288,10 +340,21 @@ final class MacBridge: ObservableObject {
         }
     }
     func activateDrawingDemo() {
+        if CommandLine.arguments.contains("--ghost-demo"), !demoPreviewConfigured {
+            demoPreviewConfigured = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self, let target = WindowWorkspace.windowList().first(where: {
+                    $0.pid == ProcessInfo.processInfo.processIdentifier && $0.title == "Drawing demo // Pencil Bridge"
+                }) else { return }
+                self.workspace.request(WorkspaceRequest(windowID: target.id, locked: true, preview: true))
+            }
+        }
+        guard !workspace.state.locked else { return }
         targetApp = AppContext(name: "Pencil Bridge demo", bundleID: Bundle.main.bundleIdentifier ?? "")
         if connected { peer?.send(Packet(kind: .context, app: targetApp)) }
     }
     private func updateTargetApp(_ app: NSRunningApplication) {
+        guard !workspace.state.locked else { return }
         guard let id = app.bundleIdentifier, id != Bundle.main.bundleIdentifier else { return }
         targetApp = AppContext(name: app.localizedName ?? id, bundleID: id)
         if connected { peer?.send(Packet(kind: .context, app: targetApp)) }
@@ -310,7 +373,8 @@ final class MacBridge: ObservableObject {
     }
     private func fingerEvent(_ type: CGEventType, at point: CGPoint, count: Int64 = 1) {
         lastPoint = point
-        PenEvents.mouse(type: type, point: point, source: source, number: eventNumber, clickCount: count)?.post(tap: .cghidEventTap)
+        if workspace.state.locked, inputAllowed { CGWarpMouseCursorPosition(point) }
+        emit(PenEvents.mouse(type: type, point: point, source: source, number: eventNumber, clickCount: count))
     }
     private func postFinger(_ actions: [PointerAction]) {
         for action in actions {
@@ -324,7 +388,7 @@ final class MacBridge: ObservableObject {
     }
     private func post(_ actions: [PointerAction]) {
         if CGDisplayIsActive(displayID) == 0 { displayID = CGMainDisplayID() }
-        let bounds = CGDisplayBounds(displayID)
+        let bounds = inputBounds
         for action in actions {
             let type: CGEventType
             let x: Double, y: Double
@@ -338,7 +402,8 @@ final class MacBridge: ObservableObject {
             lastPoint = point
             guard let event = PenEvents.mouse(type: type, point: point, source: source, number: eventNumber,
                                              sample: tabletEvents ? lastSample : nil) else { continue }
-            event.post(tap: .cghidEventTap)
+            if workspace.state.locked, inputAllowed { CGWarpMouseCursorPosition(point) }
+            emit(event)
         }
     }
 }
@@ -387,6 +452,7 @@ struct MacPanel: View {
                 Button("Edit shortcuts…") { editingApp = bridge.targetApp }
             }
             Button("Open drawing demo") { openWindow(id: "drawing-demo"); NSApp.activate(ignoringOtherApps: true) }
+            WindowWorkspaceSettings(workspace: bridge.workspace)
             Picker("Target display", selection: Binding(get: { bridge.displayID }, set: { bridge.changeDisplay($0) })) {
                 ForEach(bridge.displays, id: \.0) { id, name in Text(name).tag(id) }
             }

@@ -36,7 +36,15 @@ final class Peer {
     private var sending = false
     private var outgoing = OutboundBuffer()
 
-    init(_ connection: NWConnection) { self.connection = connection }
+    init(_ connection: NWConnection, allowsPreview: Bool = false) {
+        self.connection = connection
+        framer.allowsPreview = allowsPreview
+    }
+    // Preview has its own connection and never accumulates a queue of stale frames.
+    func sendPreview(_ frame: PreviewFrame) {
+        guard !sending, outgoing.count == 0, frame.valid else { return }
+        send(Packet(kind: .preview, preview: frame))
+    }
     func start() {
         connection.stateUpdateHandler = { [weak self] state in
             guard let self, !self.closed else { return }

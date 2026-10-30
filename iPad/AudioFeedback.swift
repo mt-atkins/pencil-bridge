@@ -1,6 +1,8 @@
 import AVFoundation
 import Combine
 import UIKit
+import AVKit
+import SwiftUI
 
 /// Short speaker cues, not physical haptics. All audio work stays off the input queue.
 final class AudioFeedback: ObservableObject {
@@ -16,6 +18,14 @@ final class AudioFeedback: ObservableObject {
     @Published var volume = UserDefaults.standard.object(forKey: "feedbackVolume") as? Double ?? 0.45 {
         didSet { UserDefaults.standard.set(volume, forKey: "feedbackVolume") }
     }
+    @Published var playWhenMuted = UserDefaults.standard.object(forKey: "feedbackWhenMuted") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(playWhenMuted, forKey: "feedbackWhenMuted")
+            let value = playWhenMuted
+            queue.async { self.bypassMute = value; if self.active { self.prepare() } }
+        }
+    }
+    @Published private(set) var outputName = "iPad audio output"
     private let queue = DispatchQueue(label: "dev.morgan.pencilbridge.audio", qos: .userInteractive)
     // The following state belongs exclusively to queue.
     private var players: [Cue: [AVAudioPlayer]] = [:]
@@ -23,8 +33,14 @@ final class AudioFeedback: ObservableObject {
     private var interrupted = false
     private var lastSound = -Double.infinity
     private var interruptionObserver: NSObjectProtocol?
+    private var routeObserver: NSObjectProtocol?
+    private var bypassMute = UserDefaults.standard.object(forKey: "feedbackWhenMuted") as? Bool ?? true
 
     private init() {
+        routeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.updateRoute() }
+        updateRoute()
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
         ) { [weak self] notification in
@@ -70,7 +86,8 @@ final class AudioFeedback: ObservableObject {
         guard !interrupted else { return }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.ambient, mode: .default)
+            try session.setCategory(bypassMute ? .playback : .ambient, mode: .default,
+                                    options: bypassMute ? [.mixWithOthers] : [])
             try session.setActive(true)
             if players.isEmpty {
                 for cue in Cue.allCases {
@@ -83,6 +100,11 @@ final class AudioFeedback: ObservableObject {
             // Audio is optional. Input continues normally if the route/session is unavailable.
             players.removeAll()
         }
+    }
+    private func updateRoute() {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        outputName = outputs.map { $0.portType == .builtInSpeaker ? "iPad speakers" : $0.portName }.joined(separator: ", ")
+        if outputName.isEmpty { outputName = "iPad audio output" }
     }
 
     private func stopPlayers() {
@@ -122,4 +144,15 @@ final class AudioFeedback: ObservableObject {
         }
         return data
     }
+}
+
+struct FeedbackAudioRoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.tintColor = .white
+        view.activeTintColor = .white
+        view.accessibilityLabel = "Choose iPad audio output"
+        return view
+    }
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }

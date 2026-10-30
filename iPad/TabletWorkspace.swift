@@ -115,6 +115,10 @@ struct TabletWorkspace: View {
             HStack {
                 Label(bridge.targetApp?.name ?? bridge.display?.name ?? "Mac display", systemImage: "display").lineLimit(1)
                 Spacer()
+                if bridge.workspace.locked {
+                    Label(bridge.workspace.inputAllowed ? "App locked" : "Input paused", systemImage: "lock.fill")
+                        .font(DistyllBrand.mono(11)).foregroundStyle(DistyllBrand.muted)
+                }
                 if let ms = bridge.latencyMS { Text("\(Int(ms)) ms // round trip").font(DistyllBrand.mono(11)).foregroundStyle(DistyllBrand.muted) }
             }.font(DistyllBrand.body(12)).padding(.horizontal, 20)
             Picker("Input mode", selection: $bridge.mode) {
@@ -125,7 +129,15 @@ struct TabletWorkspace: View {
                 .onChange(of: bridge.mode) { _ in bridge.cancelStroke(); AudioFeedback.shared.play(.tool) }
             HStack(spacing: 4) {
                 if !leftHanded { rail }
-                Canvas(bridge: bridge).clipShape(RoundedRectangle(cornerRadius: 24))
+                Canvas(bridge: bridge)
+                    .overlay {
+                        if !bridge.workspace.inputAllowed {
+                            Text("Input paused // Activate the selected app window on your Mac")
+                                .font(DistyllBrand.body(15, strong: true)).padding(20)
+                                .background(DistyllBrand.graphite.opacity(0.9), in: RoundedRectangle(cornerRadius: 16))
+                                .allowsHitTesting(false)
+                        }
+                    }.clipShape(RoundedRectangle(cornerRadius: 24))
                     .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(DistyllBrand.line, lineWidth: 1))
                 if leftHanded { rail }
             }.padding(.horizontal, 12)
@@ -162,11 +174,12 @@ struct TabletWorkspace: View {
                 .frame(width: 60, height: 48).contentShape(Rectangle())
                 .background(DistyllBrand.surface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DistyllBrand.line, lineWidth: 1))
-        }.buttonStyle(.borderless).accessibilityLabel(title)
+        }.buttonStyle(.borderless).accessibilityLabel(title).disabled(!bridge.inputAllowed)
     }
 }
 
 struct TabletSettings: View {
+    @AppStorage("ghostOpacity") private var ghostOpacity = 0.45
     @ObservedObject private var feedback = AudioFeedback.shared
     @ObservedObject var bridge: TabletBridge
     @Environment(\.dismiss) private var dismiss
@@ -174,6 +187,29 @@ struct TabletSettings: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Mac app window") {
+                    Picker("Selected window", selection: Binding(get: { bridge.workspace.selected?.id ?? 0 }, set: { id in
+                        bridge.configureWorkspace(WorkspaceRequest(windowID: id == 0 ? nil : id, clearSelection: id == 0))
+                    })) {
+                        Text("Whole display").tag(UInt32(0))
+                        if let selected = bridge.workspace.selected, !bridge.workspace.windows.contains(where: { $0.id == selected.id }) {
+                            Text("\(selected.app) // \(selected.title)").tag(selected.id)
+                        }
+                        ForEach(bridge.workspace.windows) { window in Text("\(window.app) // \(window.title)").tag(window.id) }
+                    }
+                    Toggle("Lock input to selected app", isOn: Binding(get: { bridge.workspace.locked }, set: {
+                        bridge.configureWorkspace(WorkspaceRequest(locked: $0))
+                    })).disabled(bridge.workspace.selected == nil)
+                    Toggle("Show window ghost", isOn: Binding(get: { bridge.workspace.previewEnabled }, set: {
+                        bridge.configureWorkspace(WorkspaceRequest(preview: $0))
+                    }))
+                    if bridge.workspace.previewEnabled {
+                        HStack { Text("Ghost opacity"); Slider(value: $ghostOpacity, in: 0.15...0.8, step: 0.05).accessibilityLabel("Ghost opacity") }
+                    }
+                    Text(bridge.workspace.previewStatus).font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
+                    Text("Choose a window to map the Pencil to that window. App lock pauses input when another app or window is active. Unlock or choose Whole display to return to normal control.")
+                        .font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
+                }.disabled(!bridge.connected).listRowBackground(DistyllBrand.surface)
                 Section("Tip feel") {
                     Picker("Pressure response", selection: $bridge.pressureFeel) {
                         ForEach(PressureFeel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -184,7 +220,13 @@ struct TabletSettings: View {
                     Text("Try your Pencil here. This test pad does not send input to your Mac.").font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
                 }.listRowBackground(DistyllBrand.surface)
                 Section("Audio feedback") {
-                    Toggle("Click sounds", isOn: $feedback.enabled)
+                    Toggle("Click sounds on iPad", isOn: $feedback.enabled)
+                    HStack {
+                        Text("Output: \(feedback.outputName)").font(DistyllBrand.body(13))
+                        Spacer()
+                        FeedbackAudioRoutePicker().frame(width: 44, height: 44)
+                    }
+                    Toggle("Play when iPad is muted", isOn: $feedback.playWhenMuted).disabled(!feedback.enabled)
                     if feedback.enabled {
                         HStack {
                             Text("Volume")
@@ -195,7 +237,7 @@ struct TabletSettings: View {
                         }
                         Button("Test sound") { feedback.play(.pencil) }
                     }
-                    Text("Soft clicks for Pencil contact, finger taps, dragging and tool buttons. This is sound, not vibration. Respects Silent mode and device volume; use the iPad speakers for the most direct feel.")
+                    Text("Soft clicks for Pencil contact, finger taps, dragging and tool buttons. This is sound, not vibration. Generated on the iPad and controlled by its media volume. Choose iPad speakers in the output picker for the most direct feel.")
                         .font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
                 }.listRowBackground(DistyllBrand.surface)
                 Section("Workspace") {
