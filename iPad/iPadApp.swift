@@ -133,5 +133,6 @@ final class TabletBridge: ObservableObject {
 
 @main
 struct PencilBridgeTabletApp: App {
+    init() { DistyllBrand.registerFonts() }
     var body: some Scene { WindowGroup { TabletPanel() } }
 }

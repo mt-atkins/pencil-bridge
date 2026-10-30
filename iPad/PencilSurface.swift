@@ -14,6 +14,7 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
     var trackpadEnabled = true
     var fingerSpeed = 1.5
     var generation = 0
+    var accentCursor = true
     private struct Dot { let point: CGPoint; let pressure: CGFloat }
     private var active: UITouch?
     private var activeMode = InputMode.draw
@@ -39,7 +40,7 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
     }
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = UIColor.systemBackground
+        backgroundColor = DistyllBrand.ui(DistyllBrand.graphiteHex)
         isMultipleTouchEnabled = true
         contentMode = .redraw
         pan = UIPanGestureRecognizer(target: self, action: #selector(scroll(_:)))
@@ -187,30 +188,29 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
     }
     override func draw(_ rect: CGRect) {
         let area = activeArea
-        UIColor.secondarySystemBackground.setFill()
+        DistyllBrand.ui(DistyllBrand.surfaceHex).setFill()
         UIBezierPath(roundedRect: area, cornerRadius: 16).fill()
+        DistyllBrand.ui(DistyllBrand.lineHex).setStroke()
+        let outline = UIBezierPath(roundedRect: area, cornerRadius: 16)
+        outline.lineWidth = 1 / UIScreen.main.scale; outline.stroke()
         let grid = UIBezierPath()
-        for index in 1..<8 {
-            let x = area.minX + area.width * CGFloat(index) / 8
-            grid.move(to: CGPoint(x: x, y: area.minY)); grid.addLine(to: CGPoint(x: x, y: area.maxY))
+        let inset = min(area.width, area.height) * 0.07
+        for y in stride(from: area.minY + inset, to: max(area.minY + inset, area.maxY - max(40, inset)), by: 10) {
+            grid.move(to: CGPoint(x: area.minX + inset, y: y)); grid.addLine(to: CGPoint(x: area.maxX - inset, y: y))
         }
-        for index in 1..<6 {
-            let y = area.minY + area.height * CGFloat(index) / 6
-            grid.move(to: CGPoint(x: area.minX, y: y)); grid.addLine(to: CGPoint(x: area.maxX, y: y))
-        }
-        UIColor.separator.withAlphaComponent(0.2).setStroke(); grid.lineWidth = 0.5; grid.stroke()
-        UIColor.systemTeal.withAlphaComponent(0.8).setStroke()
+        UIColor.white.withAlphaComponent(0.045).setStroke(); grid.lineWidth = 1 / UIScreen.main.scale; grid.stroke()
+        UIColor.white.withAlphaComponent(0.8).setStroke()
         for pair in zip(trail, trail.dropFirst()) {
             let segment = UIBezierPath(); segment.move(to: pair.0.point); segment.addLine(to: pair.1.point)
             segment.lineWidth = activeMode == .draw ? 1 + pair.1.pressure * 5 : 1
             segment.lineCapStyle = .round; segment.stroke()
         }
         if let last = trail.last {
-            UIColor.systemTeal.setFill()
+            (accentCursor ? DistyllBrand.ui(DistyllBrand.orangeHex) : UIColor.white).setFill()
             UIBezierPath(ovalIn: CGRect(x: last.point.x - 3, y: last.point.y - 3, width: 6, height: 6)).fill()
         }
         let label = "TIP \(Int(pressure * 100))%"
-        label.draw(at: CGPoint(x: area.minX + 14, y: area.maxY - 28), withAttributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium), .foregroundColor: UIColor.secondaryLabel])
+        label.draw(at: CGPoint(x: area.minX + 14, y: area.maxY - 28), withAttributes: [.font: DistyllBrand.uiMono(11), .foregroundColor: DistyllBrand.ui(DistyllBrand.mutedHex)])
     }
 }
 
@@ -243,6 +243,7 @@ struct PenTestPad: UIViewRepresentable {
     func makeUIView(context: Context) -> PencilSurface {
         let view = PencilSurface(); view.enabled = true; view.preserveProportions = false
         view.gesturesEnabled = false
+        view.accentCursor = false
         return view
     }
     func updateUIView(_ view: PencilSurface, context: Context) { view.pressureFeel = feel }

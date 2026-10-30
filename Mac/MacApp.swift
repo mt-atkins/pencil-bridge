@@ -112,7 +112,7 @@ final class MacBridge: ObservableObject {
         stop()
         if case .dns(-65555) = error {
             localNetworkDenied = true
-            status = "Allow Pencil Bridge in Privacy & Security → Local Network, then start sharing again."
+            status = "Allow Pencil Bridge in Privacy & Security / Local Network, then start sharing again."
         } else { status = error.localizedDescription }
     }
     func openLocalNetworkSettings() {
@@ -163,7 +163,7 @@ final class MacBridge: ObservableObject {
             self.authenticated = false
             self.connected = false
             self.latencyMS = nil
-            self.status = self.running ? "\(reason) — ready to reconnect" : "Stopped"
+            self.status = self.running ? "\(reason) // ready to reconnect" : "Stopped"
         }
         peer.onLatency = { [weak self] value in self?.latencyMS = value }
         peer.start()
@@ -345,51 +345,60 @@ struct MacPanel: View {
     var body: some View {
         ScrollView {
         VStack(alignment: .leading, spacing: 20) {
-            Label("Pencil Bridge", systemImage: "pencil.tip.crop.circle")
-                .font(.largeTitle.bold())
-            Text("Use your iPad and Apple Pencil to control this Mac.").foregroundStyle(.secondary)
+            HStack(spacing: 16) {
+                DistyllProductMark(size: 56)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Pencil Bridge").font(DistyllBrand.display(30)).tracking(-0.3)
+                    Text("Distyll // Local input").font(DistyllBrand.mono(11)).foregroundStyle(DistyllBrand.muted)
+                }
+            }
+            Text("Draw on your iPad. Work on your Mac.").font(DistyllBrand.body(15)).foregroundStyle(DistyllBrand.muted)
             Label(bridge.status, systemImage: bridge.connected ? "checkmark.circle.fill" : "network")
-            if bridge.localNetworkDenied { Button("Open Local Network Settings") { bridge.openLocalNetworkSettings() } }
+                .font(DistyllBrand.body(13)).padding(14).frame(maxWidth: .infinity, alignment: .leading).distyllPanel(recessed: true)
+            if bridge.localNetworkDenied { Button("Open local network settings") { bridge.openLocalNetworkSettings() } }
             if !bridge.trusted {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Allow Accessibility access so Pencil Bridge can move the cursor and click.")
-                    Button("Open Accessibility Settings") { bridge.requestAccessibility() }
-                }.padding().background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    Button("Open accessibility settings") { bridge.requestAccessibility() }
+                }.padding(16).distyllPanel()
             }
             if bridge.running {
                 HStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Enter this code or scan to pair").font(.headline)
-                        Text(bridge.code).font(.system(size: 48, weight: .semibold, design: .monospaced)).textSelection(.enabled)
-                        Text("A new code is created each time sharing starts.").font(.caption).foregroundStyle(.secondary)
+                        Text("Enter this code or scan to pair").font(DistyllBrand.body(15, strong: true))
+                        Text(bridge.code).font(DistyllBrand.mono(48, strong: true)).textSelection(.enabled)
+                            .padding(.horizontal, 18).padding(.vertical, 8).distyllPanel(radius: 8, recessed: true)
+                        Text("A new code is created each time sharing starts.").font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
                     }
                     if let ticket = bridge.qrTicket, bridge.qrReady { PairingQR(value: ticket.url) }
                 }
             }
             Toggle("Send tablet pressure and tilt", isOn: $bridge.tabletEvents)
                 .onChange(of: bridge.tabletEvents) { _, _ in bridge.changeDisplay(bridge.displayID) }
-            Text("Tablet support varies by drawing app. Turn this off for ordinary mouse input.").font(.caption).foregroundStyle(.secondary)
+            Text("Tablet support varies by drawing app. Turn this off for ordinary mouse input.").font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
             HStack {
-                Text("Shortcuts: \(bridge.targetApp.name)").font(.caption).lineLimit(1)
+                Text("Shortcuts: \(bridge.targetApp.name)").font(DistyllBrand.body(12)).lineLimit(1)
                 Spacer()
-                Button("Edit Shortcuts…") { editingApp = bridge.targetApp }
+                Button("Edit shortcuts…") { editingApp = bridge.targetApp }
             }
             Picker("Target display", selection: Binding(get: { bridge.displayID }, set: { bridge.changeDisplay($0) })) {
                 ForEach(bridge.displays, id: \.0) { id, name in Text(name).tag(id) }
             }
             HStack {
-                Button(bridge.running ? "Stop Sharing" : "Start Sharing") {
+                Button(bridge.running ? "Stop sharing" : "Start sharing") {
                     if bridge.running { bridge.stop() } else { bridge.start() }
-                }.buttonStyle(.borderedProminent)
-                if bridge.connected { Text("\(bridge.sampleCount) input samples").font(.caption).foregroundStyle(.secondary) }
+                }.buttonStyle(DistyllButtonStyle(primary: true))
+                if bridge.connected { Text("\(bridge.sampleCount) // samples").font(DistyllBrand.mono(11)).foregroundStyle(DistyllBrand.muted) }
             }
             if let latency = bridge.latencyMS, bridge.connected {
-                Text("Connection round trip: \(Int(latency)) ms").font(.caption).foregroundStyle(.secondary)
+                Text("\(Int(latency)) ms // round trip").font(DistyllBrand.mono(12)).foregroundStyle(DistyllBrand.muted)
             }
             Text("Keep both apps open on the same Wi-Fi network. Use the menu bar to stop sharing at any time.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
+            DistyllLayerLines().frame(height: 24)
         }.padding(28)
-        }.frame(width: 560, height: 680)
+        }.background(DistyllBrand.graphite).frame(width: 560, height: 720)
+            .distyllAppearance()
             .sheet(item: $editingApp) { app in ShortcutEditor(bridge: bridge, app: app) }
     }
 }
@@ -420,16 +429,17 @@ struct PairingQR: View {
 @main
 struct PencilBridgeMacApp: App {
     @StateObject private var bridge = MacBridge()
+    init() { DistyllBrand.registerFonts() }
     var body: some Scene {
         WindowGroup { MacPanel(bridge: bridge) }
             .windowResizability(.contentSize)
         MenuBarExtra("Pencil Bridge", systemImage: "pencil.tip.crop.circle") {
             Text(bridge.status)
-            if bridge.localNetworkDenied { Button("Open Local Network Settings…") { bridge.openLocalNetworkSettings() } }
+            if bridge.localNetworkDenied { Button("Open local network settings…") { bridge.openLocalNetworkSettings() } }
             if bridge.running {
                 Text("Pairing code: \(bridge.code)")
-                Button("Stop Sharing") { bridge.stop() }
-            } else { Button("Start Sharing") { bridge.start() } }
+                Button("Stop sharing") { bridge.stop() }
+            } else { Button("Start sharing") { bridge.start() } }
             Divider()
             Button("Quit Pencil Bridge") { bridge.stop(); NSApplication.shared.terminate(nil) }
         }

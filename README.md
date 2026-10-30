@@ -2,9 +2,13 @@
 
 Use an Apple Pencil-compatible iPad as a cursor input surface for a Mac. Two native Swift apps send Pencil input over an encrypted local connection.
 
-**Experimental prototype (0.2).** The earlier version was installed and paired on physical hardware. This update adds a tablet workspace, finger trackpad controls, four-digit codes and QR pairing. Automated checks cover the new input and pairing formats; camera scanning, pressure support in individual drawing apps, and gesture feel still need hardware testing. Contributions and device reports are welcome. Update both apps together: version 0.2 uses input protocol 2.
+**Experimental prototype (0.3).** The earlier version was installed and paired on physical hardware. The apps include a tablet workspace, finger trackpad controls, four-digit codes and QR pairing. Version 0.3 applies Distyll’s Toolpath branding across both apps. Automated checks cover the new input and pairing formats; camera scanning, pressure support in individual drawing apps, and gesture feel still need hardware testing. Contributions and device reports are welcome. Update both apps together: versions 0.2 and 0.3 use input protocol 2.
 
 The Pencil touches the **iPad screen**. Mac trackpads and Magic Trackpads cannot detect its tip. USB currently installs the app; it does **not** carry the input connection.
+
+## Distyll branding
+
+Graphite surfaces, restrained orange actions, Space Grotesk headings, Inter text and IBM Plex Mono readouts follow Distyll’s Toolpath system. Both apps bundle their fonts and use an original pen-and-tablet icon. See [BRANDING.md](BRANDING.md) for tokens and asset generation, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for font licences.
 
 ## Pen tablet workspace
 
@@ -150,4 +154,4 @@ The transport follows Apple's [TLS-PSK Network.framework example](https://develo
 
 ## Contributing and license
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Released under the [MIT license](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Original code and product icons are released under the [MIT license](LICENSE). Bundled fonts retain their [SIL Open Font Licences](THIRD_PARTY_NOTICES.md).

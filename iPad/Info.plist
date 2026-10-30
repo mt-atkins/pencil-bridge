@@ -31,6 +31,14 @@
 	<string>Scan the pairing QR code displayed by Pencil Bridge on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect your iPad and Mac to send Apple Pencil input over your local network.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/IBMPlexMono-Medium.ttf</string>
+		<string>Fonts/IBMPlexMono-Regular.ttf</string>
+		<string>Fonts/Inter-Regular.ttf</string>
+		<string>Fonts/Inter-SemiBold.ttf</string>
+		<string>Fonts/SpaceGrotesk-Bold.ttf</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

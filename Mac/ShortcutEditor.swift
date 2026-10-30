@@ -18,8 +18,8 @@ struct ShortcutEditor: View {
     ]
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Shortcuts for \(app.name)").font(.title2.bold())
-            Text("These bindings are selected automatically when this Mac app is active.").foregroundStyle(.secondary)
+            Text("Shortcuts for \(app.name)").font(DistyllBrand.display(24))
+            Text("These bindings are selected automatically when this Mac app is active.").foregroundStyle(DistyllBrand.muted)
             Form {
                 ForEach(actions, id: \.0) { action, title in
                     HStack {
@@ -27,19 +27,19 @@ struct ShortcutEditor: View {
                         Picker("Key", selection: binding(action, \.key)) {
                             ForEach(keys, id: \.1) { symbol, code in Text(symbol).tag(code) }
                         }.labelsHidden().frame(width: 100)
-                        Toggle("⌘", isOn: binding(action, \.command)).accessibilityLabel("Command for \(title)")
-                        Toggle("⇧", isOn: binding(action, \.shift)).accessibilityLabel("Shift for \(title)")
-                        Toggle("⌥", isOn: binding(action, \.option)).accessibilityLabel("Option for \(title)")
-                        Toggle("⌃", isOn: binding(action, \.control)).accessibilityLabel("Control for \(title)")
+                        Toggle("Cmd", isOn: binding(action, \.command)).accessibilityLabel("Command for \(title)")
+                        Toggle("Shift", isOn: binding(action, \.shift)).accessibilityLabel("Shift for \(title)")
+                        Toggle("Opt", isOn: binding(action, \.option)).accessibilityLabel("Option for \(title)")
+                        Toggle("Ctrl", isOn: binding(action, \.control)).accessibilityLabel("Control for \(title)")
                     }
                 }
             }
             HStack {
-                Button("Reset to Defaults") { bridge.resetShortcuts(app: app.bundleID) }
+                Button("Reset to defaults") { bridge.resetShortcuts(app: app.bundleID) }
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction).buttonStyle(DistyllButtonStyle(primary: true, compact: true))
             }
-        }.padding(24).frame(width: 640)
+        }.padding(24).frame(width: 680).background(DistyllBrand.graphite).distyllAppearance()
     }
     private func binding<Value>(_ action: TabletControl.Action, _ path: WritableKeyPath<ShortcutBinding, Value>) -> Binding<Value> {
         Binding(get: { bridge.shortcut(for: action, app: app.bundleID)![keyPath: path] }, set: { value in

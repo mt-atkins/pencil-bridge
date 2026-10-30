@@ -19,3 +19,4 @@
 - [x] Per-app shortcut profiles with a Mac editor and active-app context.
 - [ ] Verify camera scanning and new gestures on physical hardware.
 - [ ] Verify pressure/tilt compatibility in individual Mac drawing apps.
+- [x] Distyll Toolpath branding, bundled licensed fonts and original platform icons.

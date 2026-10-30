@@ -15,6 +15,9 @@ struct TabletPanel: View {
             }
             .navigationTitle("Pencil Bridge").navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(bridge.connected ? "Pencil Bridge" : "Distyll").font(DistyllBrand.display(17))
+                }
                 ToolbarItem(placement: .navigationBarLeading) {
                     if bridge.connected || bridge.connecting { Button("Disconnect") { bridge.disconnect() } }
                 }
@@ -24,6 +27,10 @@ struct TabletPanel: View {
                 }
             }
         }
+        .background(DistyllBrand.graphite)
+        .toolbarBackground(DistyllBrand.graphite, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .distyllAppearance()
         .sheet(isPresented: $showScanner) {
             NavigationStack {
                 PairingScanner { text in showScanner = false; bridge.scan(text) }
@@ -34,7 +41,7 @@ struct TabletPanel: View {
                     }
                     .navigationTitle("Scan to pair").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showScanner = false } } }
-            }
+            }.distyllAppearance()
         }
         .sheet(isPresented: $showSettings) { TabletSettings(bridge: bridge) }
         .onChange(of: scenePhase) { phase in
@@ -46,20 +53,28 @@ struct TabletPanel: View {
     private var pairing: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Image(systemName: "pencil.tip.crop.circle").font(.system(size: 52)).foregroundStyle(.teal)
-                Text("Your iPad. Your pen tablet.").font(.largeTitle.bold())
-                Text("Start sharing on your Mac, then scan its QR code or enter the four-digit code.")
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Pencil Bridge").font(DistyllBrand.display(36)).tracking(-0.36)
+                        Text("Draw on your iPad. Work on your Mac.")
+                            .font(DistyllBrand.body(16)).foregroundStyle(DistyllBrand.muted).lineSpacing(6)
+                    }
+                    Spacer(minLength: 0)
+                    DistyllProductMark(size: 64)
+                }
+                Text("Start sharing on your Mac. Scan its QR code or enter the four-digit code below.")
+                    .font(DistyllBrand.body(15)).foregroundStyle(DistyllBrand.muted).lineSpacing(6)
                 Button { showScanner = true } label: {
-                    Label("Scan QR Code", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity).padding(8)
-                }.buttonStyle(.borderedProminent).controlSize(.large).disabled(bridge.connecting)
+                    Label("Scan QR code", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity).padding(8)
+                }.buttonStyle(DistyllButtonStyle(primary: true)).disabled(bridge.connecting)
                 Divider()
-                Text("Or enter the join code").font(.headline)
+                Text("Or enter the join code").font(DistyllBrand.body(15, strong: true))
                 TextField("0000", text: $bridge.code)
                     .focused($codeFocused)
                     .keyboardType(.numberPad).textContentType(.oneTimeCode)
-                    .font(.system(size: 42, weight: .semibold, design: .monospaced))
-                    .multilineTextAlignment(.center).textFieldStyle(.roundedBorder)
+                    .font(DistyllBrand.mono(42, strong: true))
+                    .multilineTextAlignment(.center).textFieldStyle(.plain)
+                    .padding(.vertical, 16).distyllPanel(radius: 8, recessed: true)
                     .accessibilityLabel("Four-digit join code")
                     .onChange(of: bridge.code) { value in
                         let filtered = String(value.filter { "0123456789".contains($0) }.prefix(4))
@@ -67,21 +82,24 @@ struct TabletPanel: View {
                         if Bridge.validJoinCode(filtered) { codeFocused = false }
                     }
                 HStack {
-                    Text(bridge.status).font(.callout).foregroundStyle(.secondary)
+                    Text(bridge.status).font(DistyllBrand.body(14)).foregroundStyle(DistyllBrand.muted)
                     Spacer()
-                    Button("Find Mac") { bridge.search() }.disabled(bridge.connecting)
+                    Button("Find Mac") { bridge.search() }.buttonStyle(DistyllButtonStyle(compact: true)).disabled(bridge.connecting)
                 }
                 ForEach(bridge.hosts, id: \.endpoint) { host in
                     Button { bridge.connect(to: host) } label: {
-                        HStack { Image(systemName: "desktopcomputer"); Text(TabletBridge.name(host)); Spacer(); Image(systemName: "arrow.right.circle.fill") }
-                            .padding(12)
-                    }.buttonStyle(.bordered)
+                        HStack { Image(systemName: "desktopcomputer"); Text(TabletBridge.name(host)); Spacer(); Image(systemName: "link.circle") }
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(DistyllButtonStyle())
                         .disabled(!Bridge.validJoinCode(bridge.code) || bridge.connecting)
                 }
                 if bridge.connecting { ProgressView("Pairing…") }
-                Text("Both devices must be on the same local network.").font(.footnote).foregroundStyle(.secondary)
+                Text("Both devices must be on the same local network.").font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
+                DistyllLayerLines().frame(height: 24)
+                Text("Distyll // Local input").font(DistyllBrand.mono(11)).foregroundStyle(DistyllBrand.muted)
             }.padding(28).frame(maxWidth: 560).frame(maxWidth: .infinity)
         }
+        .background(DistyllBrand.graphite)
         .scrollDismissesKeyboard(.interactively)
         .onAppear { bridge.search() }
     }
@@ -95,8 +113,8 @@ struct TabletWorkspace: View {
             HStack {
                 Label(bridge.targetApp?.name ?? bridge.display?.name ?? "Mac display", systemImage: "display").lineLimit(1)
                 Spacer()
-                if let ms = bridge.latencyMS { Text("\(Int(ms)) ms round trip").monospacedDigit().foregroundStyle(.secondary) }
-            }.font(.caption).padding(.horizontal, 20)
+                if let ms = bridge.latencyMS { Text("\(Int(ms)) ms // round trip").font(DistyllBrand.mono(11)).foregroundStyle(DistyllBrand.muted) }
+            }.font(DistyllBrand.body(12)).padding(.horizontal, 20)
             Picker("Input mode", selection: $bridge.mode) {
                 Text("Pen").tag(InputMode.draw)
                 Text("Pointer").tag(InputMode.pointer)
@@ -105,12 +123,14 @@ struct TabletWorkspace: View {
                 .onChange(of: bridge.mode) { _ in bridge.cancelStroke() }
             HStack(spacing: 4) {
                 if !leftHanded { rail }
-                Canvas(bridge: bridge).clipShape(RoundedRectangle(cornerRadius: 20))
+                Canvas(bridge: bridge).clipShape(RoundedRectangle(cornerRadius: 24))
+                    .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(DistyllBrand.line, lineWidth: 1))
                 if leftHanded { rail }
-            }.padding(.horizontal, 8)
-            Text(bridge.mode == .pan ? "Pencil contact pans with Space + drag. Lift to release." : "Pencil to draw · fingers to point · two fingers to scroll · pinch to zoom")
-                .font(.caption).foregroundStyle(.secondary).padding(.bottom, 8)
+            }.padding(.horizontal, 12)
+            Text(bridge.mode == .pan ? "Pencil contact pans with Space + drag. Lift to release." : "Pencil to draw // fingers to point // two fingers to scroll // pinch to zoom")
+                .font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted).padding(.bottom, 8)
         }
+        .background(DistyllBrand.graphite)
     }
     private var rail: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -135,8 +155,10 @@ struct TabletWorkspace: View {
             if action == .brush || action == .eraser { bridge.mode = .draw }
             bridge.control(action)
         } label: {
-            VStack(spacing: 4) { Image(systemName: icon).font(.title3); Text(title).font(.system(size: 10)) }
+            VStack(spacing: 4) { Image(systemName: icon).font(.title3); Text(title).font(DistyllBrand.body(11)) }
                 .frame(width: 60, height: 48).contentShape(Rectangle())
+                .background(DistyllBrand.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DistyllBrand.line, lineWidth: 1))
         }.buttonStyle(.borderless).accessibilityLabel(title)
     }
 }
@@ -153,33 +175,62 @@ struct TabletSettings: View {
                         ForEach(PressureFeel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }.pickerStyle(.segmented)
                     Text("Light reaches full pressure with less force. Firm gives more room for delicate strokes.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
                     PenTestPad(feel: bridge.pressureFeel).frame(height: 220)
-                    Text("Try your Pencil here. This test pad does not send input to your Mac.").font(.caption).foregroundStyle(.secondary)
-                }
+                    Text("Try your Pencil here. This test pad does not send input to your Mac.").font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
+                }.listRowBackground(DistyllBrand.surface)
                 Section("Workspace") {
                     Toggle("Left-handed controls", isOn: $leftHanded)
                     Toggle("Keep display proportions", isOn: $bridge.preserveProportions)
                         .onChange(of: bridge.preserveProportions) { _ in bridge.cancelStroke() }
-                    Text("Uses a proportional active area so circles stay circular on your Mac.").font(.footnote).foregroundStyle(.secondary)
+                    Text("Uses a proportional active area so circles stay circular on your Mac.").font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
                     Picker("Finger input", selection: $bridge.fingerInput) {
                         ForEach(FingerInput.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }.onChange(of: bridge.fingerInput) { _ in bridge.cancelStroke() }
                     if bridge.fingerInput == .trackpad {
                         HStack { Text("Pointer speed"); Slider(value: $bridge.fingerSpeed, in: 0.5...3, step: 0.1) }
-                        Text("One finger moves; tap to click; two-finger tap for secondary click; three fingers drag. Pinch uses your app’s zoom shortcuts.").font(.footnote).foregroundStyle(.secondary)
+                        Text("One finger moves; tap to click; two-finger tap for secondary click; three fingers drag. Pinch uses your app’s zoom shortcuts.").font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
                     }
-                    Text("Touch gestures pause during Pencil contact and briefly after lifting to reject resting fingers.").font(.footnote).foregroundStyle(.secondary)
-                }
+                    Text("Touch gestures pause during Pencil contact and briefly after lifting to reject resting fingers.").font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
+                }.listRowBackground(DistyllBrand.surface)
                 Section("Drawing apps") {
-                    Text("Shortcuts follow the active Mac app. Use Edit Shortcuts in the Mac companion to customize each app’s keys and modifiers.").font(.footnote)
+                    Text("Shortcuts follow the active Mac app. Use Edit Shortcuts in the Mac companion to customize each app’s keys and modifiers.").font(DistyllBrand.body(13))
                     Text("Brush, eraser and size buttons use B, E, [ and ]. Zoom uses ⌘+/− and Fit uses ⌘0. Pan holds Space while the Pencil touches. Your Mac app must support these shortcuts.")
-                        .font(.footnote)
+                        .font(DistyllBrand.body(13))
                     Text("Pressure and tilt are sent as macOS tablet events. Support depends on the drawing app. First-generation Apple Pencil does not provide hover or a double-tap button.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }.navigationTitle("Tablet settings").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }
+                        .font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
+                }.listRowBackground(DistyllBrand.surface)
+                Section("Distyll") {
+                    Text("Pencil Bridge // Toolpath").font(DistyllBrand.mono(12)).foregroundStyle(DistyllBrand.muted)
+                    NavigationLink("Font licences") { DistyllFontLicenses() }
+                    Text("Space Grotesk, Inter and IBM Plex Mono are bundled under the SIL Open Font License. Licence notices ship with the app.")
+                        .font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
+                }.listRowBackground(DistyllBrand.surface)
+            }.scrollContentBackground(.hidden).background(DistyllBrand.graphite)
+                .navigationTitle("Tablet settings").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.buttonStyle(DistyllButtonStyle(primary: true, compact: true)) } }
+        }.distyllAppearance()
+    }
+}
+
+struct DistyllFontLicenses: View {
+    private let families = [("Space Grotesk", "SpaceGrotesk-OFL"), ("Inter", "Inter-OFL"), ("IBM Plex Mono", "IBMPlexMono-OFL")]
+    var body: some View {
+        List {
+            ForEach(families, id: \.1) { family, file in
+                NavigationLink(family) {
+                    ScrollView {
+                        Text(contents(file)).font(DistyllBrand.body(13)).lineSpacing(6)
+                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(24)
+                    }.background(DistyllBrand.graphite).navigationTitle(family)
+                }.listRowBackground(DistyllBrand.surface)
+            }
+        }.scrollContentBackground(.hidden).background(DistyllBrand.graphite)
+            .navigationTitle("Font licences")
+    }
+    private func contents(_ file: String) -> String {
+        guard let url = Bundle.main.url(forResource: file, withExtension: "txt", subdirectory: "FontLicenses"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "Licence notice unavailable in this build." }
+        return text
     }
 }

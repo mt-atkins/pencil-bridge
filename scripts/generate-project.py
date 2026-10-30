@@ -55,6 +55,10 @@ def format_scheme(source):
 
 sources = [str(p.relative_to(root)) for folder in ('Shared', 'Mac', 'iPad') for p in sorted((root / folder).glob('*.swift'))]
 refs = {p: add('ref:' + p, '{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ' + quote(p) + '; sourceTree = "<group>"; }') for p in sources}
+resource_refs = {}
+for path in ['Resources/Fonts', 'Resources/FontLicenses', 'Mac/Assets.xcassets', 'iPad/Assets.xcassets']:
+    kind = 'folder.assetcatalog' if path.endswith('.xcassets') else 'folder'
+    resource_refs[path] = add('ref:' + path, '{isa = PBXFileReference; lastKnownFileType = ' + kind + '; path = ' + quote(path) + '; sourceTree = "<group>"; }')
 product_refs = []
 targets = []
 for platform, target, bundle, sdk, deployment in [
@@ -65,7 +69,9 @@ for platform, target, bundle, sdk, deployment in [
     builds = [add('build:' + target + p, '{isa = PBXBuildFile; fileRef = ' + refs[p] + '; }') for p in selected]
     source_phase = add('sources:' + target, '{isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (' + ','.join(builds) + '); runOnlyForDeploymentPostprocessing = 0; }')
     frameworks = add('frameworks:' + target, '{isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; }')
-    resources = add('resources:' + target, '{isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; }')
+    selected_resources = ['Resources/Fonts', 'Resources/FontLicenses', platform + '/Assets.xcassets']
+    resource_builds = [add('resource:' + target + path, '{isa = PBXBuildFile; fileRef = ' + resource_refs[path] + '; }') for path in selected_resources]
+    resources = add('resources:' + target, '{isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (' + ','.join(resource_builds) + '); runOnlyForDeploymentPostprocessing = 0; }')
     product = add('product:' + target, '{isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ' + target + '.app; sourceTree = BUILT_PRODUCTS_DIR; }')
     product_refs.append(product)
     configs = []
@@ -74,7 +80,8 @@ for platform, target, bundle, sdk, deployment in [
             'PRODUCT_NAME': target, 'PRODUCT_BUNDLE_IDENTIFIER': bundle, 'SDKROOT': sdk,
             'INFOPLIST_FILE': platform + '/Info.plist', 'SWIFT_VERSION': '5.0',
             'CODE_SIGN_STYLE': 'Automatic', 'ENABLE_HARDENED_RUNTIME': 'YES',
-            'GENERATE_INFOPLIST_FILE': 'NO', 'MARKETING_VERSION': '0.2.0', 'CURRENT_PROJECT_VERSION': '2',
+            'GENERATE_INFOPLIST_FILE': 'NO', 'MARKETING_VERSION': '0.3.0', 'CURRENT_PROJECT_VERSION': '3',
+            'ASSETCATALOG_COMPILER_APPICON_NAME': 'AppIcon',
             'SWIFT_OPTIMIZATION_LEVEL': '-Onone' if config == 'Debug' else '-O',
             deployment[0]: deployment[1],
         }
@@ -99,9 +106,11 @@ for platform, target, bundle, sdk, deployment in [
         'NSBonjourServices': ['_pencilbridge._tcp', '_pencilqr._tcp'],
     }
     if platform == 'iPad':
+        plist['UIAppFonts'] = ['Fonts/' + path.name for path in sorted((root / 'Resources/Fonts').glob('*.ttf'))]
         plist['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Pencil Bridge on your Mac.'
         plist.update(LSRequiresIPhoneOS=True, UILaunchScreen={}, UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'])
     else:
+        plist['ATSApplicationFontsPath'] = 'Fonts'
         plist.update(LSMinimumSystemVersion='14.0', NSHighResolutionCapable=True, NSPrincipalClass='NSApplication')
     (root / platform / 'Info.plist').write_bytes(plistlib.dumps(plist))
     schemes = project / 'xcshareddata' / 'xcschemes'
@@ -117,7 +126,7 @@ for platform, target, bundle, sdk, deployment in [
 '''))
 
 products = add('products', '{isa = PBXGroup; children = (' + ','.join(product_refs) + '); name = Products; sourceTree = "<group>"; }')
-group = add('main-group', '{isa = PBXGroup; children = (' + ','.join(list(refs.values()) + [products]) + '); sourceTree = "<group>"; }')
+group = add('main-group', '{isa = PBXGroup; children = (' + ','.join(list(refs.values()) + list(resource_refs.values()) + [products]) + '); sourceTree = "<group>"; }')
 project_configs = [add('project:' + c, '{isa = XCBuildConfiguration; name = ' + c + '; buildSettings = { CLANG_ENABLE_MODULES = YES; }; }') for c in ['Debug', 'Release']]
 project_list = add('project-configs', '{isa = XCConfigurationList; buildConfigurations = (' + ','.join(project_configs) + '); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }')
 project_id = add('project', '{isa = PBXProject; attributes = {LastUpgradeCheck = 1640; }; buildConfigurationList = ' + project_list + '; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en,Base); mainGroup = ' + group + '; productRefGroup = ' + products + '; projectDirPath = ""; projectRoot = ""; targets = (' + ','.join(targets) + '); }')
