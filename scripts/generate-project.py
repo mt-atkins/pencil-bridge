@@ -74,7 +74,7 @@ for platform, target, bundle, sdk, deployment in [
             'PRODUCT_NAME': target, 'PRODUCT_BUNDLE_IDENTIFIER': bundle, 'SDKROOT': sdk,
             'INFOPLIST_FILE': platform + '/Info.plist', 'SWIFT_VERSION': '5.0',
             'CODE_SIGN_STYLE': 'Automatic', 'ENABLE_HARDENED_RUNTIME': 'YES',
-            'GENERATE_INFOPLIST_FILE': 'NO', 'MARKETING_VERSION': '0.1.0', 'CURRENT_PROJECT_VERSION': '1',
+            'GENERATE_INFOPLIST_FILE': 'NO', 'MARKETING_VERSION': '0.2.0', 'CURRENT_PROJECT_VERSION': '2',
             'SWIFT_OPTIMIZATION_LEVEL': '-Onone' if config == 'Debug' else '-O',
             deployment[0]: deployment[1],
         }
@@ -92,9 +92,10 @@ for platform, target, bundle, sdk, deployment in [
         'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleName': 'Pencil Bridge', 'CFBundlePackageType': 'APPL',
         'CFBundleShortVersionString': '$(MARKETING_VERSION)', 'CFBundleVersion': '$(CURRENT_PROJECT_VERSION)',
         'NSLocalNetworkUsageDescription': 'Connect your iPad and Mac to send Apple Pencil input over your local network.',
-        'NSBonjourServices': ['_pencilbridge._tcp'],
+        'NSBonjourServices': ['_pencilbridge._tcp', '_pencilqr._tcp'],
     }
     if platform == 'iPad':
+        plist['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Pencil Bridge on your Mac.'
         plist.update(LSRequiresIPhoneOS=True, UILaunchScreen={}, UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'])
     else:
         plist.update(LSMinimumSystemVersion='14.0', NSHighResolutionCapable=True, NSPrincipalClass='NSApplication')

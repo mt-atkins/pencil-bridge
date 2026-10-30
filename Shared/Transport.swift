@@ -13,7 +13,7 @@ func bridgeParameters(code: String) -> NWParameters {
     // Network.framework's external PSK API uses TLS 1.2 PSK cipher suites.
     sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
     sec_protocol_options_set_max_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
-    sec_protocol_options_append_tls_ciphersuite(tls.securityProtocolOptions, tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))!)
+    sec_protocol_options_append_tls_ciphersuite(tls.securityProtocolOptions, tls_ciphersuite_t(rawValue: UInt16(TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256))!)
     let tcp = NWProtocolTCP.Options()
     tcp.noDelay = true
     let parameters = NWParameters(tls: tls, tcp: tcp)

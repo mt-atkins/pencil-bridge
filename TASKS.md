@@ -6,9 +6,16 @@
 - [x] Cancellation, backgrounding, timeout, and disconnect handling.
 - [x] Reproducible Xcode project and iPadOS 16 support.
 - [x] Signed physical-device installation and pairing.
-- [x] Automated input and encrypted networking checks (36 passing).
+- [x] Automated input and encrypted networking checks (manual and QR credentials, native events and gesture state).
 - [x] Latency improvements: coalesced movement, bounded preview, periodic permission/UI updates, and round-trip diagnostics.
 - [ ] Retest latency on hardware after the performance update.
 - [ ] Confirm all hardware acceptance checks in the README.
 - [ ] Investigate direct USB input transport.
-- [ ] Explore pressure-sensitive tablet events for Mac drawing apps.
+- [x] Four-digit manual pairing with attempt limiting and a separate QR pairing secret.
+- [x] Native iPad QR scanner, camera permissions and strict ticket validation.
+- [x] Proportional active area, tip-feel adjustment, local pen test and reversible shortcut rail.
+- [x] Pen pressure/tilt encoding and native AppKit conversion tests.
+- [x] Relative finger pointing, tap/multi-click, secondary click, scrolling, pinch zoom and three-finger drag.
+- [x] Per-app shortcut profiles with a Mac editor and active-app context.
+- [ ] Verify camera scanning and new gestures on physical hardware.
+- [ ] Verify pressure/tilt compatibility in individual Mac drawing apps.

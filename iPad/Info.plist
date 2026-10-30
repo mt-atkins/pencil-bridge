@@ -25,7 +25,10 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_pencilbridge._tcp</string>
+		<string>_pencilqr._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan the pairing QR code displayed by Pencil Bridge on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect your iPad and Mac to send Apple Pencil input over your local network.</string>
 	<key>UILaunchScreen</key>

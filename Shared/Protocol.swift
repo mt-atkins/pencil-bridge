@@ -2,14 +2,19 @@ import Foundation
 
 enum Bridge {
     static let service = "_pencilbridge._tcp"
-    static let version = 1
+    static let version = 2
+    static let qrService = "_pencilqr._tcp"
+    static func newJoinCode() -> String { String(format: "%04d", Int.random(in: 0..<10000)) }
+    static func validJoinCode(_ text: String) -> Bool {
+        text.count == 4 && text.utf8.allSatisfy { (48...57).contains($0) }
+    }
     static func normalizedCode(_ text: String) -> String {
         text.uppercased().filter { !$0.isWhitespace && $0 != "-" }
     }
 }
 
 enum InputPhase: String, Codable { case down, move, up, cancel }
-enum InputMode: String, Codable, CaseIterable { case draw, pointer }
+enum InputMode: String, Codable, CaseIterable { case draw, pointer, pan }
 
 struct PencilSample: Codable {
     var phase: InputPhase
@@ -18,19 +23,28 @@ struct PencilSample: Codable {
     var pressure: Double
     var mode: InputMode
     var strokeMoved: Bool? = nil
+    var tiltX: Double? = nil
+    var tiltY: Double? = nil
     var valid: Bool {
         x.isFinite && y.isFinite && pressure.isFinite &&
-        (0...1).contains(x) && (0...1).contains(y) && (0...1).contains(pressure)
+        (0...1).contains(x) && (0...1).contains(y) && (0...1).contains(pressure) &&
+        [tiltX, tiltY].allSatisfy { $0 == nil || ($0!.isFinite && (-1...1).contains($0!)) }
     }
 }
 
 struct Packet: Codable {
-    enum Kind: String, Codable { case hello, welcome, sample, heartbeat, goodbye }
+    enum Kind: String, Codable { case hello, welcome, sample, heartbeat, goodbye, control, display, context }
     var kind: Kind
     var version: Int = Bridge.version
     var sample: PencilSample? = nil
     var ping: Double? = nil
     var pong: Double? = nil
+    var display: DisplayInfo? = nil
+    var control: TabletControl? = nil
+    var samples: [PencilSample]? = nil
+    var app: AppContext? = nil
+    var inputSamples: [PencilSample] { samples ?? sample.map { [$0] } ?? [] }
+    var onlyMovement: Bool { kind == .sample && !inputSamples.isEmpty && inputSamples.allSatisfy { $0.phase == .move } }
 }
 
 // Keep the newest position while preserving every press, lift and cancellation.
@@ -39,11 +53,24 @@ struct OutboundBuffer {
     private var packets: [Packet] = []
     var count: Int { packets.count }
     mutating func append(_ packet: Packet) -> Bool {
-        if packet.kind == .sample, packet.sample?.phase == .move,
-           let previous = packets.last, previous.kind == .sample,
-           previous.sample?.phase == .move, previous.sample?.mode == packet.sample?.mode {
+        if packet.kind == .control, let control = packet.control,
+           [.relativeMove, .scroll].contains(control.action),
+           let previous = packets.last, previous.kind == .control,
+           let old = previous.control, old.action == control.action {
+            let sum = TabletControl(action: control.action, dx: old.dx + control.dx, dy: old.dy + control.dy)
+            if sum.valid {
+                var combined = packet; combined.control = sum
+                packets[packets.count - 1] = combined
+                return true
+            }
+        }
+        if packet.onlyMovement, let previous = packets.last, previous.onlyMovement,
+           previous.inputSamples.last?.mode == packet.inputSamples.first?.mode {
             var newest = packet
-            if previous.sample?.strokeMoved == true { newest.sample?.strokeMoved = true }
+            var points = Array((previous.inputSamples + packet.inputSamples).suffix(packet.inputSamples.first?.mode == .pointer ? 1 : 16))
+            if previous.inputSamples.contains(where: { $0.strokeMoved == true }) { points[points.count - 1].strokeMoved = true }
+            newest.sample = nil
+            newest.samples = points
             packets[packets.count - 1] = newest
             return true
         }
@@ -77,7 +104,10 @@ struct PacketFramer {
             buffer.removeSubrange(...end)
             guard let packet = try? JSONDecoder().decode(Packet.self, from: line),
                   packet.version == Bridge.version,
-                  packet.kind != .sample || packet.sample?.valid == true else {
+                  packet.kind != .sample || (!packet.inputSamples.isEmpty && packet.inputSamples.count <= 16 && packet.inputSamples.allSatisfy(\.valid)),
+                  packet.kind != .control || packet.control?.valid == true,
+                  packet.display == nil || packet.display?.valid == true,
+                  packet.app == nil || packet.app?.valid == true else {
                 throw Failure.invalid
             }
             packets.append(packet)
@@ -110,7 +140,7 @@ struct PointerState {
             var actions = reset()
             last = (x, y)
             origin = (x, y)
-            if sample.mode == .draw {
+            if sample.mode != .pointer {
                 held = true
                 actions += [.move(x, y), .down(x, y)]
             } else { actions.append(.move(x, y)) }

@@ -1,5 +1,8 @@
 import Foundation
 import Network
+import AppKit
+import CoreImage.CIFilterBuiltins
+import Security
 
 var checks = 0
 func check(_ condition: Bool, _ message: String) {
@@ -63,15 +66,93 @@ func unitChecks() throws {
     check(queue.count == 2, "one thousand queued positions reduce to the newest position")
     _ = queue.append(Packet(kind: .sample, sample: sample(.up, 1, 0.5)))
     check(queue.pop()?.sample?.phase == .down, "coalescing preserves press ordering")
-    check(queue.pop()?.sample?.x == 1, "coalescing retains the latest position")
+    check(queue.pop()?.inputSamples.last?.x == 1, "coalescing retains the latest position")
     check(queue.pop()?.sample?.phase == .up && queue.count == 0, "coalescing preserves button release")
     var marked = sample(.move)
     marked.strokeMoved = true
     _ = queue.append(Packet(kind: .sample, sample: marked))
     _ = queue.append(Packet(kind: .sample, sample: sample(.move)))
-    check(queue.pop()?.sample?.strokeMoved == true, "coalescing preserves pointer movement history")
+    check(queue.pop()?.inputSamples.last?.strokeMoved == true, "coalescing preserves pointer movement history")
     for _ in 0..<32 { _ = queue.append(Packet(kind: .hello)) }
     check(!queue.append(Packet(kind: .hello)) && queue.count == 32, "non-coalescible input queue is bounded")
+}
+
+func tabletChecks() throws {
+    check(Bridge.validJoinCode("0042") && Bridge.validJoinCode("9999"), "four-digit codes preserve leading zeros")
+    check(!Bridge.validJoinCode("123") && !Bridge.validJoinCode("12345") && !Bridge.validJoinCode("１２３４") && !Bridge.validJoinCode("ABCD"), "manual codes require exactly four ASCII digits")
+    check((0..<100).allSatisfy { _ in Bridge.validJoinCode(Bridge.newJoinCode()) }, "generated join codes are four digits")
+    var limiter = PairingAttemptLimiter()
+    check((0..<5).allSatisfy { limiter.allow(at: Double($0)) }, "manual pairing allows five attempts")
+    check(!limiter.allow(at: 59) && limiter.allow(at: 60), "manual pairing throttle expires after a minute")
+    let ticket = PairingTicket.create()
+    check(PairingTicket(url: ticket.url) == ticket, "QR pairing payload round trip")
+    check(ticket.secret.count == 64 && ticket.secret != Bridge.newJoinCode(), "QR pairing uses a separate long secret")
+    check(PairingTicket(url: ticket.url + "&key=" + ticket.secret) == nil, "duplicate QR keys rejected")
+    check(PairingTicket(url: ticket.url.replacingOccurrences(of: "pencilbridge:", with: "https:")) == nil, "unrelated QR URLs rejected")
+    check(PairingTicket(url: ticket.url.replacingOccurrences(of: "v=2", with: "v=99")) == nil, "unsupported QR versions rejected")
+    check(PairingTicket(url: ticket.url + "#fragment") == nil && PairingTicket(url: "pencilbridge://pair?v=2&name=Mac&key=1234") == nil, "invalid QR credentials rejected")
+    let generator = CIFilter.qrCodeGenerator()
+    generator.message = Data(ticket.url.utf8); generator.correctionLevel = "M"
+    let qr = generator.outputImage!.transformed(by: CGAffineTransform(scaleX: 5, y: 5))
+    let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: CIContext(options: [.useSoftwareRenderer: true]), options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])!
+    check((detector.features(in: qr).first as? CIQRCodeFeature)?.messageString == ticket.url, "displayed QR image decodes to the exact pairing ticket")
+    let area = TabletMapping.area(width: 1024, height: 600, aspect: 16.0 / 9)
+    check(abs(area.width / 1920 - area.height / 1080) < 0.00001 && area.y > 0, "active area preserves display proportions")
+    let portrait = TabletMapping.area(width: 768, height: 900, aspect: 16.0 / 9)
+    check(portrait.width == 768 && portrait.height == 432 && portrait.y == 234, "portrait iPad uses a centered proportional area")
+    check(TabletMapping.area(width: .infinity, height: 600, aspect: 1).width == 0, "invalid mapping geometry rejected")
+    check(PressureFeel.light.apply(0.4) > 0.4 && PressureFeel.firm.apply(0.4) < 0.4, "tip feel changes pressure response")
+    check(PressureFeel.allCases.allSatisfy { $0.apply(0) == 0 && $0.apply(1) == 1 && $0.apply(.nan) == 0 }, "pressure curves retain endpoints and reject nonfinite values")
+    var pen = sample(.move)
+    pen.tiltX = 0.4; pen.tiltY = -0.3
+    let event = PenEvents.mouse(type: .leftMouseDragged, point: CGPoint(x: 10, y: 20), source: nil, number: 7, sample: pen)!
+    let native = NSEvent(cgEvent: event)!
+    check(event.getIntegerValueField(.mouseEventSubtype) == 1 && native.subtype == .tabletPoint, "pen movement is a native tablet-point mouse subtype")
+    // Mouse pressure is quantized to 8 bits; the tablet field retains 16-bit precision.
+    check(abs(Double(native.pressure) - 0.7) <= 1.0 / 255, "AppKit receives normalized pen pressure at native mouse-event precision")
+    check(abs(event.getDoubleValueField(.tabletEventPointPressure) - 0.7) <= 1.0 / 65535, "tablet pressure field retains high-resolution pressure")
+    check(abs(native.tilt.x - 0.4) < 0.001 && abs(native.tilt.y + 0.3) < 0.001, "AppKit receives pen tilt")
+    check(event.getIntegerValueField(.tabletEventDeviceID) == PenEvents.deviceID, "tablet events share a stable device identifier")
+    let lifted = PenEvents.mouse(type: .leftMouseUp, point: .zero, source: nil, number: 7, sample: pen)!
+    check(lifted.getDoubleValueField(.tabletEventPointPressure) == 0 && lifted.getIntegerValueField(.tabletEventPointButtons) == 0, "pen lift releases pressure and tip button")
+    let right = PenEvents.mouse(type: .rightMouseDown, point: .zero, source: nil, number: 8, clickCount: 2)!
+    check(right.getIntegerValueField(.mouseEventButtonNumber) == 1 && right.getIntegerValueField(.mouseEventClickState) == 2, "finger secondary and double clicks use native button fields")
+    check(right.getIntegerValueField(.mouseEventSubtype) == 0, "finger input remains ordinary mouse input")
+    let proximity = PenEvents.proximity(enter: true, point: .zero, source: nil)!
+    check(proximity.type == .tabletProximity && proximity.getIntegerValueField(.tabletProximityEventEnterProximity) == 1, "pen contact announces tablet proximity")
+    check(PenEvents.proximity(enter: false, point: .zero, source: nil)!.getIntegerValueField(.tabletProximityEventEnterProximity) == 0, "pen release exits proximity")
+    var state = PointerState()
+    check(state.consume(sample(.down, 0.2, 0.3, .pan)) == [.move(0.2, 0.3), .down(0.2, 0.3)], "pan mode starts a draggable contact")
+    check(state.consume(sample(.cancel, 0.5, 0.5, .pan)) == [.up(0.2, 0.3)], "cancelled pan releases its mouse contact")
+    pen.tiltX = .infinity
+    check(!pen.valid, "nonfinite tilt is rejected")
+    pen.tiltX = 1.1
+    check(!pen.valid, "out-of-range tilt is rejected")
+    check(rejected(try PacketFramer.encode(Packet(kind: .control, control: TabletControl(action: .scroll, dx: 9999)))), "oversized finger deltas rejected")
+    check(rejected(try PacketFramer.encode(Packet(kind: .control))), "missing shortcut command rejected")
+    var queue = OutboundBuffer()
+    _ = queue.append(Packet(kind: .control, control: TabletControl(action: .dragBegin)))
+    for _ in 0..<20 { _ = queue.append(Packet(kind: .control, control: TabletControl(action: .relativeMove, dx: 2, dy: 3))) }
+    _ = queue.append(Packet(kind: .control, control: TabletControl(action: .dragEnd)))
+    check(queue.count == 3 && queue.pop()?.control?.action == .dragBegin, "finger drag coalescing preserves the press boundary")
+    let movement = queue.pop()!.control!
+    check(movement.dx == 40 && movement.dy == 60, "finger coalescing sums relative distance instead of dropping it")
+    check(queue.pop()?.control?.action == .dragEnd, "finger drag coalescing preserves release")
+    let binding = ShortcutBinding(key: 6, command: true, shift: true)
+    check(PenEvents.flags(for: binding) == [.maskCommand, .maskShift], "app shortcut modifiers are explicit")
+    check(try JSONDecoder().decode(ShortcutBinding.self, from: JSONEncoder().encode(binding)) == binding, "per-app bindings serialize without losing modifiers")
+    check(!ShortcutBinding(key: 999).valid, "invalid shortcut keys are rejected")
+    var fingers = FingerPointerState()
+    check(fingers.move(to: CGPoint(x: 5, y: 6)).isEmpty, "finger movement before a gesture begins is ignored")
+    check(fingers.begin(at: CGPoint(x: 100, y: 200), dragging: false).isEmpty && !fingers.held, "one-finger motion begins without pressing a button")
+    check(fingers.move(to: CGPoint(x: 110, y: 220)) == [.move(110, 220)], "finger pointing uses relative cursor movement")
+    check(fingers.reset().isEmpty && fingers.point == nil, "finger pointing ends without creating a click")
+    check(fingers.begin(at: CGPoint(x: 110, y: 220), dragging: true) == [.down(110, 220)], "three-finger dragging presses at the current cursor")
+    check(fingers.move(to: CGPoint(x: 120, y: 240)) == [.drag(120, 240)], "three-finger movement retains its held button")
+    check(fingers.reset() == [.up(120, 240)] && !fingers.held, "disconnect or cancellation releases a finger drag at its last point")
+    check(fingers.reset().isEmpty, "repeated finger drag cancellation is safe")
+    _ = fingers.begin(at: .zero, dragging: true)
+    check(fingers.begin(at: CGPoint(x: 3, y: 4), dragging: false) == [.up(0, 0)], "a new finger gesture releases an interrupted drag")
 }
 
 final class NetworkCheck {
@@ -84,9 +165,10 @@ final class NetworkCheck {
     var state = PointerState()
     var actions: [PointerAction] = []
     let wrongCode: Bool
-    init(wrongCode: Bool) { self.wrongCode = wrongCode }
+    let secret: String
+    init(wrongCode: Bool, secret: String = "0042") { self.wrongCode = wrongCode; self.secret = secret }
     func run() throws {
-        let code = "123456ABCDEF"
+        let code = secret
         let listener = try NWListener(using: bridgeParameters(code: code), on: .any)
         self.listener = listener
         listener.newConnectionHandler = { connection in
@@ -112,9 +194,14 @@ final class NetworkCheck {
         listener.stateUpdateHandler = { status in
             switch status {
             case .ready:
-                let peer = Peer(NWConnection(host: "127.0.0.1", port: listener.port!, using: bridgeParameters(code: self.wrongCode ? "WRONGCODE123" : code)))
+                let peer = Peer(NWConnection(host: "127.0.0.1", port: listener.port!, using: bridgeParameters(code: self.wrongCode ? "9999" : code)))
                 self.client = peer
-                peer.onReady = { peer.send(Packet(kind: .hello)) }
+                peer.onReady = {
+                    let metadata = peer.connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata
+                    let suite = metadata.map { sec_protocol_metadata_get_negotiated_tls_ciphersuite($0.securityProtocolMetadata).rawValue }
+                    check(suite == UInt16(TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256), "pairing negotiates ephemeral key exchange and authenticated encryption")
+                    peer.send(Packet(kind: .hello))
+                }
                 peer.onPacket = { packet in
                     if packet.kind == .welcome {
                         self.welcomed = true
@@ -154,9 +241,11 @@ final class NetworkCheck {
 
 do {
     try unitChecks()
+    try tabletChecks()
     if !CommandLine.arguments.contains("--unit-only") {
         try NetworkCheck(wrongCode: false).run()
         try NetworkCheck(wrongCode: true).run()
+        try NetworkCheck(wrongCode: false, secret: PairingTicket.create().secret).run()
     }
     print("\(checks) checks passed")
 } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
