@@ -23,6 +23,14 @@ Graphite surfaces, restrained orange actions, Space Grotesk headings, Inter text
 
 Drawing apps differ in how they accept synthetic tablet events. **Send tablet pressure and tilt** can be disabled in the Mac app for ordinary mouse compatibility. Encoding and AppKit conversion are tested; pressure/tilt support has not yet been verified across third-party drawing apps. First-generation Apple Pencil has no hover sensing or double-tap button. Screen mirroring and direct USB input are not implemented.
 
+## Mac drawing demo
+
+Choose **Open drawing demo** in the Mac companion or menu bar. Pair the iPad, select Pen, enable tablet pressure and tilt, then draw in the light canvas. The demo uses ordinary AppKit input events, showing whether it receives tablet or mouse input plus live pressure and tilt. Pressure changes brush width; ordinary mouse input uses fixed width. It includes brush/eraser, size, undo/redo, Clear and Save PNG. Keyboard controls: B, E, [ and ], Cmd Z, Shift Cmd Z and Cmd S. Drawings stay in memory until exported; closing the demo discards them.
+
+## Audio feedback
+
+The iPad plays optional, short speaker clicks for Pencil contact, finger clicks, drag starts and tool controls. Tablet Settings provides a Click sounds toggle, volume slider and Test sound button. Cues are generated locally and prepared off the input thread; there is no continuous stroke sound or extra network traffic. They respect Silent mode and device volume and mix with other audio. Use the iPad speakers for the most direct feel; Bluetooth audio may add delay. These are audible cues, not physical haptics.
+
 ## Finger trackpad controls
 
 Finger input is relative to the Mac cursor and can move between displays; the Pencil remains mapped absolutely to the selected display.

@@ -117,6 +117,7 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
         fingerRecognizers.forEach { $0.isEnabled = false }
         let sample = capture(pencil, .down)
         onSample?(sample)
+        AudioFeedback.shared.play(.pencil)
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard enabled, let active, touches.contains(active) else { return }
@@ -157,17 +158,26 @@ final class PencilSurface: UIView, UIGestureRecognizerDelegate {
             onGesture?(TabletControl(action: dragging ? .dragEnd : .trackpadEnd)); return
         }
         guard enabled, gesturesEnabled, trackpadEnabled, active == nil else { return }
-        if recognizer.state == .began { onGesture?(TabletControl(action: dragging ? .dragBegin : .trackpadBegin)) }
+        if recognizer.state == .began {
+            onGesture?(TabletControl(action: dragging ? .dragBegin : .trackpadBegin))
+            if dragging { AudioFeedback.shared.play(.click) }
+        }
         let delta = recognizer.translation(in: self)
         recognizer.setTranslation(.zero, in: self)
         if delta != .zero { onGesture?(TabletControl(action: .relativeMove, dx: Double(delta.x) * fingerSpeed, dy: Double(delta.y) * fingerSpeed)) }
         if recognizer.state == .ended { onGesture?(TabletControl(action: dragging ? .dragEnd : .trackpadEnd)) }
     }
     @objc private func click(_ recognizer: UITapGestureRecognizer) {
-        if recognizer.state == .ended, active == nil, trackpadEnabled { onGesture?(TabletControl(action: .click)) }
+        if recognizer.state == .ended, active == nil, trackpadEnabled {
+            onGesture?(TabletControl(action: .click))
+            AudioFeedback.shared.play(.click)
+        }
     }
     @objc private func secondaryClick(_ recognizer: UITapGestureRecognizer) {
-        if recognizer.state == .ended, active == nil, gesturesEnabled { onGesture?(TabletControl(action: .secondaryClick)) }
+        if recognizer.state == .ended, active == nil, gesturesEnabled {
+            onGesture?(TabletControl(action: .secondaryClick))
+            AudioFeedback.shared.play(.click)
+        }
     }
     @objc private func scroll(_ recognizer: UIPanGestureRecognizer) {
         guard enabled, gesturesEnabled, active == nil, pinch.state != .began, pinch.state != .changed else { recognizer.setTranslation(.zero, in: self); return }

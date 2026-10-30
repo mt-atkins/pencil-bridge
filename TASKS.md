@@ -20,3 +20,5 @@
 - [ ] Verify camera scanning and new gestures on physical hardware.
 - [ ] Verify pressure/tilt compatibility in individual Mac drawing apps.
 - [x] Distyll Toolpath branding, bundled licensed fonts and original platform icons.
+- [x] Optional local audio feedback with volume, mute support and pen-test preview.
+- [x] Mac drawing demo with pressure/tilt readouts, brush/eraser, undo/redo and PNG export.

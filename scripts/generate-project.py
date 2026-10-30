@@ -80,7 +80,7 @@ for platform, target, bundle, sdk, deployment in [
             'PRODUCT_NAME': target, 'PRODUCT_BUNDLE_IDENTIFIER': bundle, 'SDKROOT': sdk,
             'INFOPLIST_FILE': platform + '/Info.plist', 'SWIFT_VERSION': '5.0',
             'CODE_SIGN_STYLE': 'Automatic', 'ENABLE_HARDENED_RUNTIME': 'YES',
-            'GENERATE_INFOPLIST_FILE': 'NO', 'MARKETING_VERSION': '0.3.0', 'CURRENT_PROJECT_VERSION': '3',
+            'GENERATE_INFOPLIST_FILE': 'NO', 'MARKETING_VERSION': '0.3.1', 'CURRENT_PROJECT_VERSION': '4',
             'ASSETCATALOG_COMPILER_APPICON_NAME': 'AppIcon',
             'SWIFT_OPTIMIZATION_LEVEL': '-Onone' if config == 'Debug' else '-O',
             deployment[0]: deployment[1],

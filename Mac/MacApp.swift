@@ -287,6 +287,10 @@ final class MacBridge: ObservableObject {
             key(binding.key, down: false, flags: flags)
         }
     }
+    func activateDrawingDemo() {
+        targetApp = AppContext(name: "Pencil Bridge demo", bundleID: Bundle.main.bundleIdentifier ?? "")
+        if connected { peer?.send(Packet(kind: .context, app: targetApp)) }
+    }
     private func updateTargetApp(_ app: NSRunningApplication) {
         guard let id = app.bundleIdentifier, id != Bundle.main.bundleIdentifier else { return }
         targetApp = AppContext(name: app.localizedName ?? id, bundleID: id)
@@ -340,6 +344,7 @@ final class MacBridge: ObservableObject {
 }
 
 struct MacPanel: View {
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject var bridge: MacBridge
     @State private var editingApp: AppContext?
     var body: some View {
@@ -381,6 +386,7 @@ struct MacPanel: View {
                 Spacer()
                 Button("Edit shortcuts…") { editingApp = bridge.targetApp }
             }
+            Button("Open drawing demo") { openWindow(id: "drawing-demo"); NSApp.activate(ignoringOtherApps: true) }
             Picker("Target display", selection: Binding(get: { bridge.displayID }, set: { bridge.changeDisplay($0) })) {
                 ForEach(bridge.displays, id: \.0) { id, name in Text(name).tag(id) }
             }
@@ -400,6 +406,9 @@ struct MacPanel: View {
         }.background(DistyllBrand.graphite).frame(width: 560, height: 720)
             .distyllAppearance()
             .sheet(item: $editingApp) { app in ShortcutEditor(bridge: bridge, app: app) }
+            .onAppear {
+                if CommandLine.arguments.contains("--drawing-demo") { openWindow(id: "drawing-demo") }
+            }
     }
 }
 
@@ -429,10 +438,21 @@ struct PairingQR: View {
 @main
 struct PencilBridgeMacApp: App {
     @StateObject private var bridge = MacBridge()
+    @Environment(\.openWindow) private var openWindow
     init() { DistyllBrand.registerFonts() }
     var body: some Scene {
         WindowGroup { MacPanel(bridge: bridge) }
             .windowResizability(.contentSize)
+        Window("Drawing demo // Pencil Bridge", id: "drawing-demo") {
+            DrawingDemo()
+                .onAppear { bridge.activateDrawingDemo() }
+                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                    if let window = note.object as? NSWindow, window.title == "Drawing demo // Pencil Bridge" {
+                        bridge.activateDrawingDemo()
+                    }
+                }
+        }
+            .defaultSize(width: 1080, height: 760)
         MenuBarExtra("Pencil Bridge", systemImage: "pencil.tip.crop.circle") {
             Text(bridge.status)
             if bridge.localNetworkDenied { Button("Open local network settings…") { bridge.openLocalNetworkSettings() } }
@@ -441,6 +461,7 @@ struct PencilBridgeMacApp: App {
                 Button("Stop sharing") { bridge.stop() }
             } else { Button("Start sharing") { bridge.start() } }
             Divider()
+            Button("Open drawing demo") { openWindow(id: "drawing-demo"); NSApp.activate(ignoringOtherApps: true) }
             Button("Quit Pencil Bridge") { bridge.stop(); NSApplication.shared.terminate(nil) }
         }
     }

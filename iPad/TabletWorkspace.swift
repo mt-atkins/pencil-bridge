@@ -44,7 +44,9 @@ struct TabletPanel: View {
             }.distyllAppearance()
         }
         .sheet(isPresented: $showSettings) { TabletSettings(bridge: bridge) }
+        .onAppear { AudioFeedback.shared.setActive(scenePhase == .active) }
         .onChange(of: scenePhase) { phase in
+            AudioFeedback.shared.setActive(phase == .active)
             if phase == .background { showScanner = false; bridge.suspend() }
             else if phase == .inactive { bridge.cancelStroke() }
         }
@@ -120,7 +122,7 @@ struct TabletWorkspace: View {
                 Text("Pointer").tag(InputMode.pointer)
                 Text("Pan").tag(InputMode.pan)
             }.pickerStyle(.segmented).padding(.horizontal, 20)
-                .onChange(of: bridge.mode) { _ in bridge.cancelStroke() }
+                .onChange(of: bridge.mode) { _ in bridge.cancelStroke(); AudioFeedback.shared.play(.tool) }
             HStack(spacing: 4) {
                 if !leftHanded { rail }
                 Canvas(bridge: bridge).clipShape(RoundedRectangle(cornerRadius: 24))
@@ -154,6 +156,7 @@ struct TabletWorkspace: View {
         Button {
             if action == .brush || action == .eraser { bridge.mode = .draw }
             bridge.control(action)
+            AudioFeedback.shared.play(.tool)
         } label: {
             VStack(spacing: 4) { Image(systemName: icon).font(.title3); Text(title).font(DistyllBrand.body(11)) }
                 .frame(width: 60, height: 48).contentShape(Rectangle())
@@ -164,6 +167,7 @@ struct TabletWorkspace: View {
 }
 
 struct TabletSettings: View {
+    @ObservedObject private var feedback = AudioFeedback.shared
     @ObservedObject var bridge: TabletBridge
     @Environment(\.dismiss) private var dismiss
     @AppStorage("leftHanded") private var leftHanded = false
@@ -178,6 +182,21 @@ struct TabletSettings: View {
                         .font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
                     PenTestPad(feel: bridge.pressureFeel).frame(height: 220)
                     Text("Try your Pencil here. This test pad does not send input to your Mac.").font(DistyllBrand.body(12)).foregroundStyle(DistyllBrand.muted)
+                }.listRowBackground(DistyllBrand.surface)
+                Section("Audio feedback") {
+                    Toggle("Click sounds", isOn: $feedback.enabled)
+                    if feedback.enabled {
+                        HStack {
+                            Text("Volume")
+                            Slider(value: $feedback.volume, in: 0...1, step: 0.05)
+                                .accessibilityLabel("Feedback volume")
+                            Text("\(Int(feedback.volume * 100))%")
+                                .font(DistyllBrand.mono(12)).frame(minWidth: 36)
+                        }
+                        Button("Test sound") { feedback.play(.pencil) }
+                    }
+                    Text("Soft clicks for Pencil contact, finger taps, dragging and tool buttons. This is sound, not vibration. Respects Silent mode and device volume; use the iPad speakers for the most direct feel.")
+                        .font(DistyllBrand.body(13)).foregroundStyle(DistyllBrand.muted)
                 }.listRowBackground(DistyllBrand.surface)
                 Section("Workspace") {
                     Toggle("Left-handed controls", isOn: $leftHanded)
