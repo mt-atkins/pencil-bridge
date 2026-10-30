@@ -82,6 +82,10 @@ for platform, target, bundle, sdk, deployment in [
             values['DEVELOPMENT_TEAM'] = os.environ['DEVELOPMENT_TEAM']
         if platform == 'iPad':
             values.update(TARGETED_DEVICE_FAMILY='2', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', SUPPORTS_MACCATALYST='NO')
+        else:
+            # Local Network privacy uses the main executable UUID. Avoid a reusable
+            # debug launcher stub hiding changes to the app's service declarations.
+            values['ENABLE_DEBUG_DYLIB'] = 'NO'
         configs.append(add(target + config, '{isa = XCBuildConfiguration; name = ' + config + '; buildSettings = ' + settings(values) + '; }'))
     config_list = add('configs:' + target, '{isa = XCConfigurationList; buildConfigurations = (' + ','.join(configs) + '); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }')
     target_id = add('target:' + target, '{isa = PBXNativeTarget; buildConfigurationList = ' + config_list + '; buildPhases = (' + ','.join([source_phase, frameworks, resources]) + '); buildRules = (); dependencies = (); name = ' + target + '; productName = ' + target + '; productReference = ' + product + '; productType = "com.apple.product-type.application"; }')

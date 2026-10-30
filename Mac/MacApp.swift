@@ -11,6 +11,7 @@ final class MacBridge: ObservableObject {
     @Published var code = ""
     @Published var qrTicket: PairingTicket?
     @Published var qrReady = false
+    @Published var localNetworkDenied = false
     @Published var tabletEvents = true
     @Published var targetApp = AppContext(name: "Frontmost Mac app", bundleID: "")
     @Published var shortcutProfiles: [String: [String: ShortcutBinding]] = {
@@ -58,6 +59,7 @@ final class MacBridge: ObservableObject {
             self?.updateTargetApp(app)
         })
         if let front = NSWorkspace.shared.frontmostApplication { updateTargetApp(front) }
+        if CommandLine.arguments.contains("--start-sharing") { start() }
     }
     var displays: [(CGDirectDisplayID, String)] {
         NSScreen.screens.enumerated().map { index, screen in
@@ -71,6 +73,7 @@ final class MacBridge: ObservableObject {
     }
     func start() {
         guard !running else { return }
+        localNetworkDenied = false
         code = Bridge.newJoinCode()
         attempts = PairingAttemptLimiter()
         let ticket = PairingTicket.create()
@@ -85,7 +88,7 @@ final class MacBridge: ObservableObject {
                 guard let self else { return }
                 switch state {
                 case .ready: self.status = "Waiting for your iPad"
-                case .failed(let error): self.stop(); self.status = error.localizedDescription
+                case .failed(let error): self.listenerFailed(error)
                 default: break
                 }
             }
@@ -95,7 +98,7 @@ final class MacBridge: ObservableObject {
             qrListener.stateUpdateHandler = { [weak self] state in
                 switch state {
                 case .ready: self?.qrReady = true
-                case .failed(let error): self?.stop(); self?.status = error.localizedDescription
+                case .failed(let error): self?.listenerFailed(error)
                 default: break
                 }
             }
@@ -104,6 +107,16 @@ final class MacBridge: ObservableObject {
             listener.start(queue: .main)
             qrListener.start(queue: .main)
         } catch { stop(); status = error.localizedDescription }
+    }
+    private func listenerFailed(_ error: NWError) {
+        stop()
+        if case .dns(-65555) = error {
+            localNetworkDenied = true
+            status = "Allow Pencil Bridge in Privacy & Security → Local Network, then start sharing again."
+        } else { status = error.localizedDescription }
+    }
+    func openLocalNetworkSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocalNetwork")!)
     }
     private func accept(_ connection: NWConnection, scanned: Bool = false) {
         guard running, peer == nil else { connection.cancel(); return }
@@ -336,6 +349,7 @@ struct MacPanel: View {
                 .font(.largeTitle.bold())
             Text("Use your iPad and Apple Pencil to control this Mac.").foregroundStyle(.secondary)
             Label(bridge.status, systemImage: bridge.connected ? "checkmark.circle.fill" : "network")
+            if bridge.localNetworkDenied { Button("Open Local Network Settings") { bridge.openLocalNetworkSettings() } }
             if !bridge.trusted {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Allow Accessibility access so Pencil Bridge can move the cursor and click.")
@@ -407,14 +421,11 @@ struct PairingQR: View {
 struct PencilBridgeMacApp: App {
     @StateObject private var bridge = MacBridge()
     var body: some Scene {
-        WindowGroup {
-            MacPanel(bridge: bridge).onAppear {
-                if CommandLine.arguments.contains("--start-sharing") { bridge.start() }
-            }
-        }
+        WindowGroup { MacPanel(bridge: bridge) }
             .windowResizability(.contentSize)
         MenuBarExtra("Pencil Bridge", systemImage: "pencil.tip.crop.circle") {
             Text(bridge.status)
+            if bridge.localNetworkDenied { Button("Open Local Network Settings…") { bridge.openLocalNetworkSettings() } }
             if bridge.running {
                 Text("Pairing code: \(bridge.code)")
                 Button("Stop Sharing") { bridge.stop() }
